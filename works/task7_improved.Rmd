@@ -1,0 +1,97 @@
+---
+title: "第7回課題レポート：SEMモデルの改善"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# パッケージの読み込み
+packages <- c("psych", "lavaan", "semPlot")
+for(p in packages){
+  if(!require(p, character.only = TRUE)) install.packages(p, repos="[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+  library(p, character.only = TRUE)
+}
+```
+
+## 1. データの読み込み
+
+```{r data_import}
+df_raw <- read.csv("data.csv")
+df <- na.omit(df_raw)
+head(df)
+cat("分析データ数(N):", nrow(df))
+```
+
+## 2. モデルの改善（2因子モデル）
+
+前回の分析では「戦略」と「一体化」の因子間相関が極めて高く（0.8以上）、多重共線性の問題が疑われました。
+そこで、この2つの因子を**「統合的なポジティブ要因（Positive）」**として1つにまとめ、**「障壁（Barrier）」**との2因子モデルとして再分析を行います。
+
+* **Factor1 (Positive)**: 戦略(q7-10) + 一体化(q11-13)
+* **Factor2 (Barrier)**: 障壁(q1, 2, 5, 6)
+
+### 因子分析（2因子での再確認）
+
+```{r factor_analysis_2}
+# q1〜q15を使用
+df_fa <- df[, 4:18] 
+
+# 因子数=2 で実行
+fa_result_2 <- factanal(df_fa, factors = 2, rotation = "promax")
+print(fa_result_2, cutoff = 0.3)
+```
+
+## 3. 改善モデルによるSEM
+
+改善した2因子モデルを用いて、総合評価（goodness）への影響を検証します。
+
+```{r sem_improved}
+# 改善モデルの定義
+model_improved <- '
+  # 測定モデル
+  # 戦略と一体化の項目をすべて "Positive" 因子にまとめる
+  Positive =~ q7 + q8 + q9 + q10 + q11 + q12 + q13
+  Barrier  =~ q1 + q2 + q5 + q6
+  
+  # 構造モデル
+  goodness ~ Positive + Barrier
+'
+
+# 分析実行
+fit_improved <- sem(model_improved, data = df)
+```
+
+## 4. 改善モデルの結果（パラメータ推定値）
+
+各要因の影響力（標準化係数）と有意確率（P値）を確認します。
+
+```{r result_estimates}
+# 標準化係数とP値を抽出して表示
+params <- parameterEstimates(fit_improved, standardized=TRUE)
+reg_results <- subset(params, op == "~", select = c("lhs", "rhs", "std.all", "pvalue"))
+
+colnames(reg_results) <- c("目的変数", "説明変数", "標準化係数", "P値")
+print(reg_results)
+```
+
+## 5. 改善モデルの適合度
+
+```{r result_fitmeasures}
+# 適合度指標を表示
+fitMeasures(fit_improved, c("chisq", "df", "pvalue", "cfi", "rmsea", "srmr"))
+```
+
+## 6. 改善モデルのパス図
+
+```{r result_plot}
+semPaths(fit_improved, 
+         whatLabels = "std", 
+         layout = "tree", 
+         edge.label.cex = 1, 
+         curvePivot = TRUE,
+         sizeMan = 5,
+         sizeLat = 8)
+```

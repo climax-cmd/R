@@ -1,0 +1,98 @@
+---
+title: "第7回課題レポート：因子分析とSEM"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# パッケージのインストールと読み込み
+packages <- c("psych", "lavaan", "semPlot")
+for(p in packages){
+  if(!require(p, character.only = TRUE)) install.packages(p, repos="[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+  library(p, character.only = TRUE)
+}
+```
+
+## 1. データの読み込み
+
+```{r data_import}
+df_raw <- read.csv("data.csv")
+df <- na.omit(df_raw)
+head(df)
+cat("分析データ数(N):", nrow(df))
+```
+
+## 課題1: スクリープロット
+
+```{r task1_scree}
+df_fa <- df[, 4:18] 
+fa.parallel(df_fa, fa = "fa", n.iter = 100)
+```
+
+## 課題2 & 3: 因子分析の結果と解釈
+
+```{r task2_3_factor}
+# 因子数=3, プロマックス回転
+fa_result <- factanal(df_fa, factors = 3, rotation = "promax")
+print(fa_result, cutoff = 0.3)
+```
+
+## SEM（共分散構造分析）の準備
+
+モデルを定義し、計算を実行します。
+
+```{r sem_calculation}
+model <- '
+  # 測定モデル
+  Strategy =~ q7 + q8 + q9 + q10
+  Unity    =~ q11 + q12 + q13
+  Barrier  =~ q1 + q2 + q5 + q6
+  
+  # 構造モデル
+  goodness ~ Strategy + Unity + Barrier
+'
+
+fit <- sem(model, data = df)
+```
+
+## 課題4: SEMの結果の概要（パラメータ推定値）
+
+各パスの影響力の強さ（標準化係数）と、有意確率（P値）を確認します。
+
+```{r task4_estimates}
+# 全パラメータから、標準化係数(std.all)を含めて取得
+params <- parameterEstimates(fit, standardized=TRUE)
+
+# 「~（回帰）」の関係にある行だけを抜き出す
+reg_results <- subset(params, op == "~", select = c("lhs", "rhs", "std.all", "pvalue"))
+
+# 列名を分かりやすく変更して表示
+colnames(reg_results) <- c("目的変数", "説明変数", "標準化係数", "P値")
+print(reg_results)
+```
+
+## 課題5: SEMの適合度指標
+
+モデルがデータにどれくらい当てはまっているか（CFI, RMSEAなど）を確認します。
+
+```{r task5_fitmeasures}
+# 主要な適合度指標だけを抽出して表示
+fitMeasures(fit, c("chisq", "df", "pvalue", "cfi", "tli", "rmsea", "srmr"))
+```
+
+## 課題6: SEMの結果プロット（パス図）
+
+分析結果を視覚化します。
+
+```{r task6_plot}
+semPaths(fit, 
+         whatLabels = "std",  # 標準化係数を表示
+         layout = "tree",     # ツリー形式
+         edge.label.cex = 1,  # ラベルサイズ
+         curvePivot = TRUE,   # 曲線を滑らかに
+         sizeMan = 5,         # 観測変数の箱のサイズ
+         sizeLat = 8)         # 潜在変数の円のサイズ
+```

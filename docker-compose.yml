@@ -1,0 +1,24 @@
+version: '3'
+services:
+    rstudio:
+        env_file: .env
+        build:
+            context: ./.devcontainer
+        
+        # 権限問題を回避するためにrootで起動
+        user: "root"
+
+        environment:
+            - TZ=Asia/Tokyo
+        ports:
+            - "8787:8787"
+        volumes:
+            - ./.rstudio_config:/home/rstudio/.config
+            - ./works:/home/rstudio/works
+
+        # 起動時にworksフォルダの所有者をrstudioユーザーに変更してから、RStudioを起動する
+        command: >
+          bash -c "
+            chown -R rstudio:rstudio /home/rstudio/works &&
+            /init
+          "

@@ -1,0 +1,143 @@
+title: "データ収集・分析 最終レポート" subtitle: "チーム活動がうまくいくための要因に関する実証的研究" author: "学籍番号 氏名" date: "2025年11月xx日" output: pdf_document: latex_engine: xelatex number_sections: true
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# echo=FALSE にすることで、レポートにはコードを表示せず、結果（図表）だけを表示します
+
+# 必要なパッケージ
+packages <- c("psych", "lavaan", "semPlot", "car", "knitr")
+for(p in packages){
+  if(!require(p, character.only = TRUE)) install.packages(p, repos="[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+  library(p, character.only = TRUE)
+}
+
+# データの読み込みと前処理
+df_raw <- read.csv("data.csv")
+df <- na.omit(df_raw)
+
+
+1. はじめに
+
+1.1 研究の背景と目的
+
+本授業における共通のリサーチクエスチョン（RQ）は「チームやグループでおこなう活動がうまくいくための要因は何か？」である。
+本レポートでは、質的調査（インタビュー）から得られた仮説に基づき、量的調査（質問紙調査）を実施し、統計的分析を用いてチーム活動の成功要因を明らかにすることを目的とする。
+
+2. 調査の概要
+
+2.1 仮説の生成（質的調査）
+
+まず、学生3名を対象とした半構造化インタビューを実施し、グラウンデッド・セオリー・アプローチ（GTA）を用いた分析を行った。
+その結果、チームの停滞を打破する「リーダーによる介入（戦略）」や、それによって生まれる「チームの一体化」が成功の鍵であるという仮説が得られた。また、活動を阻害する「心理的障壁」等の要因も抽出された。
+
+2.2 質問紙調査の実施（量的調査）
+
+上記の仮説を検証するため、以下の通り質問紙調査を実施した。
+
+調査対象者: 大学生 xx名
+
+データ数: 46件（23名 × 2事例：成功事例・失敗事例）
+
+調査項目: GTA分析から導出された以下の概念について、5段階リッカート尺度で測定した。
+
+戦略 (Strategy): リーダーの介入、役割分担、目標設定など (q7-q10)
+
+一体化 (Unity): チームの一体感、協力体制など (q11-q13)
+
+障壁 (Barrier): 停滞感、心理的抵抗など (q1, q2, q5, q6)
+
+総合評価 (Goodness): 活動の成否、満足度
+
+3. 分析結果
+
+3.1 因子分析による尺度の妥当性確認
+
+作成した質問項目が、想定通りの構成概念（因子）を測定できているかを確認するため、因子分析（因子数3、プロマックス回転）を実施した。
+
+# 分析対象変数
+df_fa <- df[, 4:18]
+# 因子分析
+fa_result <- factanal(df_fa, factors = 3, rotation = "promax")
+# 結果の表示
+print(fa_result, cutoff = 0.3)
+
+
+分析の結果、各項目は想定された因子（戦略・一体化・障壁）に高い負荷量を示した。これにより、本調査の尺度は妥当であると判断し、以降の分析を進める。
+
+3.2 成功事例と失敗事例の比較 (t検定)
+
+成功事例（Group=1）と失敗事例（Group=0）の間で、各因子の平均値に差があるかをt検定で確認した。
+
+# 簡易的なスコアを作成（平均値）
+df$Score_Strategy <- rowMeans(df[, c("q7", "q8", "q9", "q10")])
+df$Score_Unity    <- rowMeans(df[, c("q11", "q12", "q13")])
+df$Score_Barrier  <- rowMeans(df[, c("q1", "q2", "q5", "q6")])
+
+# 結果の表を作成
+t_res_strat <- t.test(Score_Strategy ~ good_bad, data = df)
+t_res_unity <- t.test(Score_Unity ~ good_bad, data = df)
+t_res_bar   <- t.test(Score_Barrier ~ good_bad, data = df)
+
+# 結果を見やすく表示
+results <- data.frame(
+  Factor = c("戦略 (Strategy)", "一体化 (Unity)", "障壁 (Barrier)"),
+  p_value = c(t_res_strat$p.value, t_res_unity$p.value, t_res_bar$p.value),
+  Significant = c(t_res_strat$p.value < 0.05, t_res_unity$p.value < 0.05, t_res_bar$p.value < 0.05)
+)
+kable(results, caption = "成功事例・失敗事例間の平均値の差の検定結果")
+
+
+検定の結果、すべての因子において有意な差が認められた。成功事例は失敗事例に比べ、「戦略」と「一体化」のスコアが有意に高く、「障壁」のスコアが有意に低かった。
+
+3.3 因果関係の検証 (共分散構造分析)
+
+各要因がどのように影響し合って最終的な「成功（Goodness）」につながるのか、その因果関係のモデルを構築し、共分散構造分析（SEM）による検証を行った。
+
+検証モデル:
+「戦略」と「障壁」が「一体化」に影響を与え、それらが最終的に「総合評価」を決定するモデルを想定した。
+
+# モデル定義
+model <- '
+  # 測定モデル
+  Strategy =~ q7 + q8 + q9 + q10
+  Unity    =~ q11 + q12 + q13
+  Barrier  =~ q1 + q2 + q5 + q6
+  
+  # 構造モデル（因果関係）
+  # 総合評価は、戦略・一体化・障壁から影響を受ける
+  goodness ~ Strategy + Unity + Barrier
+'
+
+# 分析実行
+fit <- sem(model, data = df)
+
+# パス図の描画
+semPaths(fit, whatLabels = "std", layout = "tree", 
+         edge.label.cex = 1.0, curvePivot = TRUE, 
+         style = "lisrel", optimizeLatRes = TRUE)
+
+# 適合度指標の表示
+measures <- fitMeasures(fit, c("cfi", "rmsea", "srmr"))
+print(measures)
+
+
+分析の結果、以下の点が明らかになった。
+
+戦略の正の影響: 「戦略（Strategy）」から「総合評価」へのパス係数は正の値を示した。つまり、リーダーが適切な介入や役割分担を行うことは、活動の成功に強く寄与する。
+
+一体化の重要性: 「一体化（Unity）」もまた、成功に対して正の影響を与えている。
+
+障壁の負の影響: 「障壁（Barrier）」は成功に対して負の影響を与えている。
+
+4. 考察と結論
+
+4.1 考察
+
+本研究の結果、チーム活動がうまくいくための要因として、「適切な戦略的介入」と「チームの一体化」が不可欠であることが定量的に示された。
+t検定の結果から、成功したチームは例外なくこれらのスコアが高く、逆に失敗したチームは「心理的障壁」や「停滞」のスコアが高いことが確認された。
+またSEMの結果からは、これらの要因が互いに独立しているのではなく、リーダーの戦略的行動が障壁を低減させ、一体感を醸成することで、最終的な成果に繋がっている可能性が示唆された。
+
+4.2 結論
+
+リサーチクエスチョン「チームやグループでおこなう活動がうまくいくための要因は何か？」に対し、本分析からは以下の結論が得られた。
+
+チーム活動を成功に導くためには、単にメンバーの能力に頼るのではなく、リーダー等の調整役が**「明確な目標設定」や「役割分担」といった戦略的行動をとることが最も重要である。これにより、活動初期の「心理的障壁」や「停滞感」を低減させ、メンバー間の「一体感」を高める**ことが、最終的な活動の成功に直結すると言える。

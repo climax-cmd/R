@@ -1,0 +1,94 @@
+---
+title: "第7回課題レポート：因子分析とSEM"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r load-data}
+df <- read.csv("data.csv") 
+
+head(df)
+```
+
+```{r t-tests}
+
+target_cols <- 3:18
+
+df <- df[order(df$subj), ]
+
+
+group0 <- subset(df, good_bad == 0)
+group1 <- subset(df, good_bad == 1)
+
+
+for (col_idx in target_cols) {
+  var_name <- colnames(df)[col_idx]
+  
+  
+  vec0 <- group0[[var_name]]
+  vec1 <- group1[[var_name]]
+  
+  
+  print(t.test(vec1, vec0, paired = FALSE))
+  
+  
+  print(t.test(vec1, vec0, paired = TRUE))
+}
+```
+
+```{r summary2}
+
+
+df_cor <- df[, 3:18]
+
+
+
+print(round(cor(df_cor), 3))
+
+
+cor.test.p <- function(x){
+    FUN <- function(x, y) cor.test(x, y)[["p.value"]]
+    z <- outer(
+      colnames(x), 
+      colnames(x), 
+      Vectorize(function(i,j) FUN(x[,i], x[,j]))
+    )
+    dimnames(z) <- list(colnames(x), colnames(x))
+    z
+}
+
+
+p_matrix <- cor.test.p(df_cor)
+print(round(p_matrix, 4))
+```
+
+```{r regression}
+
+df_clean <- na.omit(df)
+
+
+model <- lm(goodness ~ q1 + q2 + q3 + q4 + q5 + q6 + q7 + q8 + q9 + q10 + q11 + q12 + q13 + q14 + q15, data = df_clean)
+
+summary(model)
+```
+
+```{r VIF}
+
+library(car)
+
+vif(model)
+```
+
+```{r AIC}
+
+model_step <- step(model)
+
+
+summary(model_step)
+```
