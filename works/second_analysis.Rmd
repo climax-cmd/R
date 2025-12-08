@@ -1,0 +1,102 @@
+---
+title: "second_analysis"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+date: "2025-12-08"
+---
+##############
+# 第一回授業 #
+##############
+
+# --- 準備 ---
+
+# 【重要】データファイル(u001.csv)がある場所を作業ディレクトリに指定してください
+# 方法：RStudioメニューの Session -> Set Working Directory -> Choose Directory... から選択
+# 確認のため現在の場所を表示
+getwd() 
+
+# 便利なパッケージをインストール（初回のみ実行が必要）
+# すでにインストール済みの場合は飛ばしてください
+if (!require("tidyverse")) install.packages("tidyverse")
+if (!require("car")) install.packages("car")
+
+# パッケージを読み込む
+library(tidyverse)
+library(car)
+
+# --- データの読み込み ---
+
+# csvファイルを読み込む
+# ※ここでエラーが出る場合、作業ディレクトリにu001.csvがない可能性があります
+data <- read_csv("u001.csv")
+
+# データを確認する
+view(data) 
+head(data, 5)
+
+# 年収についての回答一覧を見る
+data$ZQ47A
+
+# 表で確認する
+table(data$ZQ47A)
+
+
+##############
+# 授業第二回 #
+##############
+
+# --- 欠損値などの下処理 ---
+
+# 労働時間 (JC_41) の確認
+table(data$JC_41)
+
+# --- 欠損値などの下処理 ---
+
+# 労働時間 (JC_41) の確認
+data$roudoujikan <- data$JC_41
+data$roudoujikan <- recode(data$roudoujikan, 'c(88,99) = NA')
+
+# --- 年収のリコード ---
+data$totalincome <- recode(data$ZQ47C, '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 8=500; 9=700; 10=1000; 11=1500; 12=2000; 14:99=NA')
+
+# --- 学歴のリコード ---
+data$resedu <- recode(data$ZQ23A, 'c(7,9) = NA')
+data$resedu <- as.factor(data$resedu)
+
+#################################
+# グラフの作成
+
+# 性別のグラフ
+data$sex <- as.factor(data$sex)
+plot(data$sex, names=c("男性","女性"))
+
+# 学歴のグラフ
+plot(data$resedu, names=c("中学","高校","専門","短大高専","大学","大学院"))
+
+# 労働時間のヒストグラム
+hist(data$roudoujikan, 
+     breaks=seq(0, 24, by=1), 
+     xlab="1日あたり労働時間", 
+     ylab="度数", 
+     main="問4(4A) 1日あたり労働時間")
+
+# 世帯年収の箱ひげ図
+boxplot(data$totalincome, main="世帯年収の箱ひげ図")
+
+#################################
+# 記述統計
+
+# 要約統計量
+summary(data$totalincome)
+summary(data$roudoujikan)
+summary(data$resedu)
+
+# 平均・分散・標準偏差
+mean(data$totalincome, na.rm=TRUE)
+var(data$totalincome, na.rm=TRUE)
+sd(data$totalincome, na.rm=TRUE)
+
+# 度数分布（割合）
+resedug <- table(data$resedu)
+prop.table(resedug)

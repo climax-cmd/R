@@ -16,6 +16,7 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
         texlive-latex-extra \
         texlive-fonts-recommended \
         texlive-xetex \
+        texlive-lang-japanese \ 
         libglpk-dev \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* \
     \
