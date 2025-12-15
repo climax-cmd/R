@@ -1,0 +1,86 @@
+---
+title: "第4回課題レポート：クロス集計とカイ二乗検定"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+# グローバルオプション設定
+knitr::opts_chunk$set(
+  echo = TRUE,          # コードを表示する
+  warning = FALSE,      # 警告を非表示
+  message = FALSE,      # メッセージを非表示
+  dev = "cairo_pdf",    # 日本語グラフ用デバイス
+  dev.args = list(family = "Noto Sans CJK JP")
+)
+install.packages("car")
+install.packages(c("epitools", "lsr"))
+# 必要なパッケージのインストールと読み込み
+packages <- c("tidyverse", "car", "epitools", "lsr")
+for(pkg in packages){
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+    library(pkg, character.only = TRUE)
+  }
+}
+```
+
+```{r data_import}
+# データの読み込み
+data <- read_csv("u001.csv")
+
+# --- 変数の作成 ---
+
+# 1. 学歴変数 (resuniv)
+# ZQ23A: 1=中学, 2=高校, 3=専門, 4=短大高専, 5=大学, 6=大学院
+# 大卒以上(5,6)を1、それ未満(1-4)を0にリコード
+data$resuniv <- recode(data$ZQ23A, '1:4="非大卒"; 5:6="大卒以上"; else=NA')
+data$resuniv <- factor(data$resuniv, levels = c("非大卒", "大卒以上"))
+
+# 2. 失業経験変数 (fired)
+# ZQ11_E: 1=経験あり, 2=経験なし
+data$fired <- recode(data$ZQ11_E, '1="経験あり"; 2="経験なし"')
+data$fired <- factor(data$fired, levels = c("経験なし", "経験あり"))
+
+# 3. 性別 (sex) - 3重クロス表用
+data$sex <- factor(data$sex, labels = c("男性", "女性"))
+
+# データ確認
+knitr::kable(head(data %>% select(caseid, resuniv, fired, sex), 5), 
+             caption = "使用変数の確認")
+```
+
+```{r make_table}
+# クロス集計表の作成
+cross_tab <- xtabs(~resuniv + fired, data=data)
+
+# 度数表の表示
+knitr::kable(cross_tab, caption = "クロス集計表（度数）")
+
+# 行パーセントの表示（行の合計が100%になるように計算）
+# prop.table(x, 1) で行方向の比率を計算
+cross_prop <- prop.table(cross_tab, 1) * 100
+
+knitr::kable(round(cross_prop, 1), caption = "クロス集計表（行％）")
+```
+
+```{r dokurisusei-kenntei}
+# カイ二乗検定
+chisq_result <- chisq.test(cross_tab)
+print(chisq_result)
+```
+
+```{r the_strength_of_relationship_and_the_ratio_of_odds}
+# クラメールのV（0〜1の値。0.1弱で弱い関連、0.3以上で中程度の関連）
+v_stat <- cramersV(data$resuniv, data$fired)
+print(paste("クラメールのV:", round(v_stat, 3)))
+
+# オッズ比の計算
+# （非大卒に対する大卒以上の失業経験のリスク、など）
+or_result <- oddsratio.wald(cross_tab)
+print(or_result$measure)
+```
