@@ -1,0 +1,90 @@
+---
+title: "第5回課題レポート：年収の分散分析"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+# セットアップ
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  dev = "cairo_pdf",
+  dev.args = list(family = "Noto Sans CJK JP")
+)
+
+# 必要なパッケージ
+library(tidyverse)
+library(car)
+```
+
+
+
+```{r prepare_for_data}
+# データの読み込み
+data <- read_csv("u001.csv")
+
+# --- 変数の作成 ---
+
+# 1. 年収 (totalincome)
+# カテゴリ数値を具体的な金額（万円）に変換
+# 13(2250万円以上)は2500万円と仮定
+data$totalincome <- recode(data$ZQ47C, 
+  '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 8=500; 9=700; 
+   10=1000; 11=1500; 12=2000; 13=2500; 14:99=NA')
+
+# 2. 学歴 (resedu3): 3分類
+data$resedu3 <- recode(data$ZQ23A, 'c(1,2)=1; c(3,4)=2; c(5,6)=3; c(7,9)=NA')
+data$resedu3 <- factor(data$resedu3, labels = c("高卒以下", "短大・専門等", "大卒以上"))
+
+# 3. 性別 (sex)
+data$sex <- factor(data$sex, labels = c("男性", "女性"))
+
+# データ確認
+knitr::kable(head(data %>% select(caseid, totalincome, resedu3, sex), 5), 
+             caption = "使用変数の確認")
+```
+
+```{r one_factor_anova}
+# 学歴ごとの平均年収などを確認
+tapply(data$totalincome, data$resedu3, summary)
+
+# 箱ひげ図で分布を可視化
+plot(data$totalincome ~ data$resedu3, 
+     main = "学歴ごとの世帯年収",
+     xlab = "学歴", ylab = "世帯年収 (万円)")
+
+# 一元配置分散分析
+anova1 <- aov(data$totalincome ~ data$resedu3)
+summary(anova1)
+```
+
+```{r two_factor_anova}
+# 交互作用プロット
+# 平均年収の推移を性別ごとにプロット
+interaction.plot(
+  x.factor = data$resedu3,    # 横軸：学歴
+  trace.factor = data$sex,    # 線分け：性別
+  response = data$totalincome,# 縦軸：年収
+  fun = function(x) mean(x, na.rm=TRUE),
+  # ylim = c(400, 800),       # 必要に応じてY軸の範囲を調整してください
+  col = c("blue", "red"),
+  pch = c(1, 19),
+  type = "b",
+  xlab = "学歴", ylab = "平均世帯年収 (万円)", 
+  trace.label = "性別",
+  main = "学歴と性別による年収の交互作用"
+)
+# 二元配置分散分析（交互作用あり）
+anova2 <- aov(data$totalincome ~ data$resedu3 * data$sex)
+summary(anova2)
+```
+
+#考察
+
+分析の結果、世帯年収は学歴によって有意に変動することがわかった（p < 0.001）。さらに、学歴と性別の間には有意な交互作用が見られた（p < 0.01）。これは、学歴が世帯年収に与えるプラスの効果が、性別によって異なるパターンを示していることを意味する。なぜ女性の世帯年収だけが右肩上がりなのだろうか？これは「世帯]年収であることがおそらくポイントである。女性の場合、高学歴同士の結婚になることが多いため大卒女性の世帯年収には夫の年収が加算されている可能性が高い。またパワーカップルの存在も大きいと考えられる。日本では高収入な夫を専業の主婦が支えるという世帯も多いため、高収入な男性の仮定では一人馬力になる、高収入な男性の仮定では一人馬力になりやすい。低学歴な男性の世帯では家計を支えるために、夫婦共働きの家庭が多いのではないかと推定される。
