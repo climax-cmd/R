@@ -1,0 +1,94 @@
+---
+title: "重回帰分析レポート：顧客満足度データの解析"
+author: "Ryuji Uozumi (Based on Lecture Materials)"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# 必要なパッケージの読み込み (VIF計算用)
+# install.packages("car") # 未インストールの場合は実行
+library(car)
+```
+
+```{r check_data}
+# --- データの読み込み ---
+csdata <- read.csv("CS.csv")
+
+
+head(csdata, 3)
+
+# データ件数の確認 [cite: 1022]
+nrow(csdata)
+```
+
+```{r modeling}
+# モデルの定義と実行 [cite: 1032]
+# y: 顧客数
+fit1 <- lm(y ~ x2 + x3 + x4 + x5, data = csdata)
+
+# 結果の要約（偏回帰係数、t値、p値、決定係数など） [cite: 1033]
+summary(fit1)
+```
+
+決定係数が0.82とモデルのほとんどを説明できていない
+P値もほぼ0となっておりモデルとして意味があるとは言えない。(0.05未満なら意味がある。)
+
+```{r make_analysis_of_variance_table}
+# 分散分析表の出力 
+anova(fit1) 
+# または資料通りの記述: anova(aov(y ~ x2 + x3 + x4 + x5, data=csdata))
+```
+
+```{r check_multicllinearity}
+# VIFの計算 (carパッケージが必要) [cite: 1101, 1114]
+if(require("car")){
+  vif(fit1)
+} else {
+  print("carパッケージがインストールされていません。")
+}
+```
+
+VIFは説明変数同士の相関の強さを示すが、一般的には10以上で問題視される。すべての変数が2以下程度なので今回は各変数同士は独立であると見なしてよい
+```{r adding_dummy_variables}
+# ダミー変数を追加したモデルの実行 [cite: 1128]
+fit2 <- lm(y ~ x2 + x3 + x4 + x5 + x7 + x8, data = csdata)
+
+# 結果の要約 [cite: 1132]
+summary(fit2)
+```
+
+
+自由度調整済み決定係数がダミー変数を追加したことですこし改善している
+
+```{r compare_models}
+# 各モデルの指標を比較
+# fit1: 量的変数のみ
+# fit2: ダミー変数あり
+
+# 指標を取得する関数を定義
+get_metrics <- function(model, name) {
+  s <- summary(model)
+  data.frame(
+    Model = name,
+    R_squared = s$r.squared,
+    Adj_R_squared = s$adj.r.squared,
+    AIC = AIC(model)
+  )
+}
+
+# 比較表の作成
+metrics <- rbind(
+  get_metrics(fit1, "Model 1 (x2-x5)"),
+  get_metrics(fit2, "Model 2 (x2-x5, x7, x8)")
+)
+
+print(metrics)
+```
+
+AICが小さいほどいいモデルとされるのでモデル2の方がモデル1よりいいモデルである。

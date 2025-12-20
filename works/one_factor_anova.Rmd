@@ -1,0 +1,137 @@
+---
+title: "品質管理・実験計画法：一元配置分散分析と回帰モデル"
+author: "Ryuji Uozumi (Based on Lecture Materials)"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# 必要なライブラリの読み込み
+# library(car) # 散布図描画に使用 (インストールされていない場合は install.packages("car") を実行)
+```
+
+```{r make_data}
+# 各群のデータベクトルを作成
+y1 <- c(10, 20, 55)
+y2 <- c(75, 68)
+y3 <- c(74, 68)
+
+# 全データを結合
+y <- c(y1, y2, y3)
+
+# 群を表す因子ベクトルを作成（A:3個, B:2個, C:2個）
+x <- factor(rep(c("A", "B", "C"), c(3, 2, 2)))
+
+# データフレームとして確認（任意）
+data_df <- data.frame(Group = x, Value = y)
+print(data_df)
+```
+
+```{r visualaize}
+# 全体の平均
+mean_total <- mean(y)
+print(paste("全体平均:", mean_total))
+
+# 各群の平均
+mean_y <- c(mean(y1), mean(y2), mean(y3))
+names(mean_y) <- c("Mean_A", "Mean_B", "Mean_C")
+print(mean_y)
+
+# グラフ化 (carパッケージが必要)
+if(require("car")){
+  scatterplot(y ~ x, main="散布図と箱ひげ図")
+} else {
+  boxplot(y ~ x, main="箱ひげ図 (carパッケージなし)")
+}
+```
+
+```{r sum_of_squeres}
+# --- SST: 総平方和 (Total Sum of Squares) ---
+SST <- sum((y - mean(y))^2)
+
+# --- SSA: 群間平方和 (Sum of Squares Between Groups) ---
+# 各群の平均と全体平均の差の二乗
+SSA1 <- (mean(y1) - mean(y))^2
+SSA2 <- (mean(y2) - mean(y))^2
+SSA3 <- (mean(y3) - mean(y))^2
+
+# 重み付け（データ数）をして合計
+SSA <- length(y1) * SSA1 + length(y2) * SSA2 + length(y3) * SSA3
+
+# --- SSE: 誤差平方和 (Sum of Squares Error) ---
+# 各データと各群平均との差の二乗和
+SSE1 <- sum((y1 - mean(y1))^2)
+SSE2 <- sum((y2 - mean(y2))^2)
+SSE3 <- sum((y3 - mean(y3))^2)
+SSE <- SSE1 + SSE2 + SSE3
+
+# 結果の表示
+cat("SST:", SST, "\n")
+cat("SSA:", SSA, "\n")
+cat("SSE:", SSE, "\n")
+```
+
+```{r F-kenntei}
+# 自由度 (Degrees of Freedom)
+df_A <- 3 - 1  # 群数 - 1
+df_E <- 7 - 3  # データ総数 - 群数
+
+# 不偏分散 (Mean Squares)
+VA <- SSA / df_A
+VE <- SSE / df_E
+
+# F値の計算
+Fval <- VA / VE
+
+# p値の計算 (F分布の上側確率)
+pval <- 1 - pf(Fval, df_A, df_E)
+
+# 棄却限界値 (有意水準5%) [cite: 146]
+critical_val <- qf(0.95, df_A, df_E)
+
+cat("F値:", Fval, "\n")
+cat("p値:", pval, "\n")
+cat("棄却限界値(95%):", critical_val, "\n")
+```
+
+```{r least_squeres_method}
+# デザイン行列 X の作成 (切片, ダミーB, ダミーC)
+# 注意: 資料の定義に従い、Treatment Contrast (Aを基準) を作成
+matx <- matrix(c(
+  1,1,1,1,1,1,1,  # Intercept column
+  0,0,0,1,1,0,0,  # Group B dummy
+  0,0,0,0,0,1,1   # Group C dummy
+), nrow=7, ncol=3)
+
+print("デザイン行列 X:")
+print(matx)
+
+# X'X の計算
+XX <- t(matx) %*% matx
+
+# 逆行列 (X'X)^-1 の計算
+XXinv <- solve(XX)
+
+# パラメータ beta の推定
+beta <- solve(t(matx) %*% matx) %*% t(matx) %*% y
+
+rownames(beta) <- c("Intercept(mu)", "alpha_B", "alpha_C")
+print("推定されたパラメータ:")
+print(beta)
+```
+
+```{r verification}
+# 線形回帰モデルの当てはめ
+model <- lm(y ~ x)
+
+# 回帰分析の結果表示
+summary(model)
+
+# 分散分析表の表示
+anova(aov(y ~ x))
+```
