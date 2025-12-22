@@ -1,0 +1,94 @@
+---
+title: "統計学C 第6回目 分析レポート"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "2025-12-08"
+---
+
+```{r setup, include=FALSE}
+# チャンクのオプション設定
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# 必要なライブラリの読み込み
+library(tidyverse)
+library(car)
+library(psych)
+library(ppcor)
+```
+
+```{r prepare_data}
+library(tidyverse)
+library(car)
+
+# データの読み込み
+data <- read_csv("PY140.csv")
+
+# 1. 労働時間（ZQ46）の抽出
+# 文字列から最初の数字（40時間なら40）を抜き出します
+data$work_hours <- data$ZQ46 %>% 
+  str_extract("\\d+") %>% 
+  as.numeric()
+
+# 2. 年収（ZQ47A）の数値化
+# 冒頭の「01」「10」などの数字だけを抜き出し、それを金額に変換します
+income_rank <- data$ZQ47A %>% str_extract("^\\d+") %>% as.numeric()
+
+data$income <- case_when(
+  income_rank == 1  ~ 0,
+  income_rank == 2  ~ 50,
+  income_rank == 3  ~ 150,
+  income_rank == 4  ~ 250,
+  income_rank == 5  ~ 350,
+  income_rank == 6  ~ 450,
+  income_rank == 7  ~ 550,
+  income_rank == 8  ~ 700,
+  income_rank == 9  ~ 900,
+  income_rank == 10 ~ 1250,
+  income_rank == 11 ~ 1750,
+  income_rank == 12 ~ 2250,
+  income_rank == 13 ~ 2500,
+  TRUE ~ NA_real_
+)
+
+# 3. 年齢（ZQ2）の数値化
+data$age <- data$ZQ2 %>% str_extract("\\d+") %>% as.numeric()
+
+# --- 重要：分析用データの絞り込み ---
+# NAを除いた有効なデータセットを作成
+a.data <- data.frame(
+  work_hours = data$work_hours,
+  income = data$income,
+  age = data$age
+) %>% na.omit()
+
+# サンプルサイズを表示して確認
+cat("有効なサンプル数:", nrow(a.data))
+```
+
+```{r working_hours_and_annual_income}
+# 散布図で視覚化 [cite: 7]
+plot(data$work_hours, data$income,
+     main="労働時間と年収の散布図",
+     xlab="週あたり就業時間", ylab="年収(万円)")
+
+# 相関係数の算出 [cite: 262, 264]
+cor.test(data$work_hours, data$income)
+```
+
+```{r the_effect_of_year}
+# 分析用データセットの作成（欠損値除外）
+a.data <- data.frame(
+  work_hours = data$work_hours,
+  income = data$income,
+  age = data$age
+) %>% na.omit()
+
+# 三変数のパネル図
+pairs.panels(a.data)
+
+# 年齢を制御した偏相関係数 [cite: 595, 597]
+pcor.test(a.data$work_hours, a.data$income, a.data[,c("age")], method="pearson")
+```
