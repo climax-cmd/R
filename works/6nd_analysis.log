@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2025.12.15)  23 DEC 2025 00:40
+This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2025.12.15)  24 DEC 2025 00:50
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -963,27 +963,35 @@ LaTeX Font Info:    Font shape `TU/lmtt/bx/n' in size <10> not available
 LaTeX Font Warning: Font shape `TU/HaranoAjiMincho-Regular.otf(0)/m/it' undefin
 ed
 (Font)              using `TU/HaranoAjiMincho-Regular.otf(0)/m/n' instead on in
-put line 116.
+put line 115.
 
 
-Overfull \vbox (0.60999pt too high) detected at line 168
+Overfull \vbox (0.32999pt too high) detected at line 173
  []
 
 [1
 
-]
+] [2]
 File: 6nd_analysis_files/figure-latex/working_hours_and_annual_income-1.pdf Gra
 phic file (type pdf)
 <use 6nd_analysis_files/figure-latex/working_hours_and_annual_income-1.pdf>
-[2]
-Underfull \vbox (badness 4353) detected at line 218
- []
-
 [3]
 File: 6nd_analysis_files/figure-latex/the_effect_of_year-1.pdf Graphic file (ty
 pe pdf)
 <use 6nd_analysis_files/figure-latex/the_effect_of_year-1.pdf>
-[4] (./6nd_analysis.aux)
+[4]
+Underfull \vbox (badness 10000) detected at line 320
+ []
+
+
+Underfull \vbox (badness 10000) detected at line 320
+ []
+
+[5]
+File: 6nd_analysis_files/figure-latex/stratified_analysis-1.pdf Graphic file (t
+ype pdf)
+<use 6nd_analysis_files/figure-latex/stratified_analysis-1.pdf>
+[6] [7] (./6nd_analysis.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2022/08/05>
@@ -993,12 +1001,12 @@ LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
  ) 
 Here is how much of TeX's memory you used:
- 21812 strings out of 476443
- 422045 string characters out of 5793961
- 1941627 words of memory out of 5000000
- 43480 multiletter control sequences out of 15000+600000
+ 21893 strings out of 476443
+ 428482 string characters out of 5793961
+ 1940627 words of memory out of 5000000
+ 43560 multiletter control sequences out of 15000+600000
  562257 words of font info for 76 fonts, out of 8000000 for 9000
  269 hyphenation exceptions out of 8191
- 109i,5n,139p,1009b,524s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 109i,5n,139p,1009b,924s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on 6nd_analysis.pdf (4 pages).
+Output written on 6nd_analysis.pdf (7 pages).

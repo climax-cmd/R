@@ -21,74 +21,152 @@ library(ppcor)
 
 ```{r prepare_data}
 library(tidyverse)
-library(car)
+library(haven) # .dta や .sav を読むために必須
 
-# データの読み込み
-data <- read_csv("PY140.csv")
+# 1. データの読み込み
+# ファイルが存在するかチェックしてから読み込みます
+if (file.exists("PY140.sav")) {
+  # SAVファイルの場合
+  df <- read_sav("PY140.sav")
+} else if (file.exists("PY140.dta")) {
+  # DTAファイルの場合
+  df <- read_dta("PY140.dta")
+} else {
+  stop("ファイルが見つかりません。PY140.sav または PY140.dta を同じフォルダに置いてください。")
+}
 
-# 1. 労働時間（ZQ46）の抽出
-# 文字列から最初の数字（40時間なら40）を抜き出します
-data$work_hours <- data$ZQ46 %>% 
-  str_extract("\\d+") %>% 
-  as.numeric()
+# 2. 変数の抽出と加工
+# havenで読み込むと「ラベル付きデータ」になるため、as.numericで数値化します
 
-# 2. 年収（ZQ47A）の数値化
-# 冒頭の「01」「10」などの数字だけを抜き出し、それを金額に変換します
-income_rank <- data$ZQ47A %>% str_extract("^\\d+") %>% as.numeric()
+# 労働時間 (ZQ05 または JC_41 などを想定)
+# 実際にデータにある列名を探します
+work_cols <- grep("ZQ05|JC_41|ZQ46", names(df), value = TRUE)
+if(length(work_cols) > 0) {
+  df$work_hours <- as.numeric(df[[work_cols[1]]])
+} else {
+  # 見つからない場合は強制的にNA
+  df$work_hours <- NA
+}
+# 外れ値の処理（100時間以上は除外など）
+df$work_hours[df$work_hours > 100] <- NA
 
-data$income <- case_when(
-  income_rank == 1  ~ 0,
-  income_rank == 2  ~ 50,
-  income_rank == 3  ~ 150,
-  income_rank == 4  ~ 250,
-  income_rank == 5  ~ 350,
-  income_rank == 6  ~ 450,
-  income_rank == 7  ~ 550,
-  income_rank == 8  ~ 700,
-  income_rank == 9  ~ 900,
-  income_rank == 10 ~ 1250,
-  income_rank == 11 ~ 1750,
-  income_rank == 12 ~ 2250,
-  income_rank == 13 ~ 2500,
-  TRUE ~ NA_real_
-)
+# 年収 (ZQ47A)
+# SAV/DTAなら中身は「1, 2, ...」という数値コードの可能性が高いです
+if("ZQ47A" %in% names(df)) {
+  df$income <- car::recode(as.numeric(df$ZQ47A), 
+    '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 
+     8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; else=NA')
+} else {
+  df$income <- NA
+}
 
-# 3. 年齢（ZQ2）の数値化
-data$age <- data$ZQ2 %>% str_extract("\\d+") %>% as.numeric()
+# 年齢 (ZQ02 または ZQ2)
+age_cols <- grep("ZQ0?2", names(df), value = TRUE) # ZQ2, ZQ02どちらも探す
+if(length(age_cols) > 0) {
+  df$age <- as.numeric(df[[age_cols[1]]])
+} else {
+  df$age <- NA
+}
 
-# --- 重要：分析用データの絞り込み ---
-# NAを除いた有効なデータセットを作成
+# 3. 分析用データの作成
+# data ではなく a.data を作成
 a.data <- data.frame(
-  work_hours = data$work_hours,
-  income = data$income,
-  age = data$age
+  work_hours = df$work_hours,
+  income = df$income,
+  age = df$age
 ) %>% na.omit()
 
-# サンプルサイズを表示して確認
-cat("有効なサンプル数:", nrow(a.data))
+# 読み込み結果の確認
+print(paste("有効サンプルサイズ:", nrow(a.data)))
+head(a.data)
 ```
 
 ```{r working_hours_and_annual_income}
-# 散布図で視覚化 [cite: 7]
-plot(data$work_hours, data$income,
-     main="労働時間と年収の散布図",
-     xlab="週あたり就業時間", ylab="年収(万円)")
+# data$work_hours ではなく a.data$work_hours を使います
+# （prepare_dataで na.omit したきれいなデータです）
 
-# 相関係数の算出 [cite: 262, 264]
-cor.test(data$work_hours, data$income)
+# 1. 散布図の描画
+plot(a.data$work_hours, a.data$income,
+     main = "労働時間と年収の散布図",
+     xlab = "週あたり就業時間", 
+     ylab = "年収(万円)",
+     pch = 16,       # 点の形（塗りつぶし円）
+     col = "blue")   # 点の色
+
+# 2. 相関係数の算出
+cor_result <- cor.test(a.data$work_hours, a.data$income)
+print(cor_result)
 ```
 
 ```{r the_effect_of_year}
-# 分析用データセットの作成（欠損値除外）
-a.data <- data.frame(
-  work_hours = data$work_hours,
-  income = data$income,
-  age = data$age
-) %>% na.omit()
+# 前のステップで作った a.data をそのまま使います
 
-# 三変数のパネル図
-pairs.panels(a.data)
+# 1. 3変数の関係を可視化（パネル図）
+# psychパッケージの機能で、散布図・ヒストグラム・相関をまとめて表示します
+psych::pairs.panels(a.data)
 
-# 年齢を制御した偏相関係数 [cite: 595, 597]
-pcor.test(a.data$work_hours, a.data$income, a.data[,c("age")], method="pearson")
+# 2. 年齢を制御した偏相関係数
+# ppcorパッケージを使います
+# X=労働時間, Y=年収, Z=年齢(制御変数)
+pcor_result <- ppcor::pcor.test(a.data$work_hours, a.data$income, a.data$age, method="pearson")
+
+# 結果の表示
+print(pcor_result)
+```
+
+```{r stratified_analysis}
+library(ggplot2)
+library(dplyr)
+library(haven)
+
+# 1. データの準備
+jc_col_name <- grep("JC_1", names(df), value = TRUE)[1]
+
+if(!is.na(jc_col_name)) {
+  status_label <- as_factor(df[[jc_col_name]])
+  
+  strat_data <- data.frame(
+    work_hours = df$work_hours,
+    income = df$income,
+    raw_status = status_label
+  )
+  
+  strat_data$status <- case_when(
+    grepl("正規", strat_data$raw_status) ~ "Regular (正社員)",
+    grepl("パート|アルバイト|派遣|契約|嘱託", strat_data$raw_status) ~ "Non-Regular (非正規)",
+    TRUE ~ NA_character_ # 経営者は除外するのでNA扱いでOK
+  )
+  
+  # --- 修正ポイント：外れ値を厳しくカット ---
+  # 外れ値処理の強化版
+　strat_data <- strat_data %>% 
+  filter(!is.na(work_hours) & !is.na(income) & !is.na(status)) %>%
+  filter(work_hours < 80) %>%  # 週80時間以上を除外（過労死ライン超えの外れ値）
+  filter(!(status == "Regular (正社員)" & income < 150)) # 正規で年収150万未満を除外（途中入社などを想定）
+    
+  # 2. グラフ描画
+  print(
+    ggplot(strat_data, aes(x = work_hours, y = income, color = status)) +
+    geom_point(alpha = 0.5) +          
+    geom_smooth(method = "lm", se = FALSE) + 
+    labs(title = "正規 vs 非正規：労働時間と年収（週80時間未満）",
+         x = "週あたり労働時間",
+         y = "年収（万円）",
+         color = "雇用形態") +
+    theme_minimal()
+  )
+  
+  # 3. 相関係数の再計算
+  print(
+    strat_data %>%
+    group_by(status) %>%
+    summarise(
+      Correlation = cor(work_hours, income),
+      Count = n()
+    )
+  )
+  
+} else {
+  print("JC_1変数が見つかりません")
+}
 ```
