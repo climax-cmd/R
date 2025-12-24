@@ -17,146 +17,179 @@ library(tidyverse)
 library(car)
 library(psych)
 library(ppcor)
+library(haven)
 ```
 
 ```{r prepare_data}
-library(tidyverse)
-library(haven) # .dta や .sav を読むために必須
-
 # 1. データの読み込み
-# ファイルが存在するかチェックしてから読み込みます
 if (file.exists("PY140.sav")) {
-  # SAVファイルの場合
   df <- read_sav("PY140.sav")
 } else if (file.exists("PY140.dta")) {
-  # DTAファイルの場合
   df <- read_dta("PY140.dta")
 } else {
-  stop("ファイルが見つかりません。PY140.sav または PY140.dta を同じフォルダに置いてください。")
+  stop("ファイルが見つかりません。")
 }
 
 # 2. 変数の抽出と加工
-# havenで読み込むと「ラベル付きデータ」になるため、as.numericで数値化します
 
-# 労働時間 (ZQ05 または JC_41 などを想定)
-# 実際にデータにある列名を探します
-work_cols <- grep("ZQ05|JC_41|ZQ46", names(df), value = TRUE)
-if(length(work_cols) > 0) {
-  df$work_hours <- as.numeric(df[[work_cols[1]]])
+# --- 年齢の計算 ---
+# 生まれ年変数を検索して取得
+birth_col <- grep("ybirth|ZQ01.*Y|birth", names(df), ignore.case = TRUE, value = TRUE)[1]
+
+if (!is.na(birth_col)) {
+  birth_year <- as.numeric(df[[birth_col]])
+  # 西暦の補正
+  birth_year <- ifelse(birth_year < 1900, birth_year + 1900, birth_year)
+  # 異常値の除外
+  birth_year[birth_year > 2007] <- NA
+  # 年齢算出
+  df$age <- 2007 - birth_year
 } else {
-  # 見つからない場合は強制的にNA
-  df$work_hours <- NA
+  if("ZQ2" %in% names(df)) df$age <- as.numeric(df$ZQ2) else df$age <- NA
 }
-# 外れ値の処理（100時間以上は除外など）
-df$work_hours[df$work_hours > 100] <- NA
 
-# 年収 (ZQ47A)
-# SAV/DTAなら中身は「1, 2, ...」という数値コードの可能性が高いです
+
+# --- 【重要修正】労働時間の数値化 ---
+# ZQ05_1（通勤時間）と間違わないよう、ZQ05_2 を完全一致で探します
+target_col_name <- "ZQ05_2" 
+# もし見つからなければ小文字なども試すロジックにするなら以下
+if (!target_col_name %in% names(df)) {
+   target_col_name <- grep("ZQ05_2", names(df), ignore.case = TRUE, value = TRUE)[1]
+}
+
+if (!is.na(target_col_name) && target_col_name %in% names(df)) {
+  # カテゴリ変数を階級値（実数）へ変換
+  # 1:20h以下 -> 15, 2:20-30h -> 25, 3:30-35h -> 32.5
+  # 4:35-40h -> 37.5, 5:40h -> 40, 6:40h超 -> 50
+  # 7:定まっていない, 8:わからない, 88:非該当, 99:無回答 -> NA
+  
+  df$work_hours <- car::recode(as.numeric(df[[target_col_name]]),
+    '1=15; 2=25; 3=32.5; 4=37.5; 5=40; 6=50; 
+     7=NA; 8=NA; 88=NA; 99=NA; else=NA')
+     
+  # 確認用出力（提出時には消してもOK）
+  print(paste("使用した労働時間変数:", target_col_name))
+  
+} else {
+  df$work_hours <- NA
+  warning("警告：週労働時間の変数 ZQ05_2 が見つかりません")
+}
+
+# --- 年収の数値化 ---
 if("ZQ47A" %in% names(df)) {
   df$income <- car::recode(as.numeric(df$ZQ47A), 
     '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 
-     8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; else=NA')
+     8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; 
+     14=NA; 99=NA; else=NA')
 } else {
   df$income <- NA
 }
 
-# 年齢 (ZQ02 または ZQ2)
-age_cols <- grep("ZQ0?2", names(df), value = TRUE) # ZQ2, ZQ02どちらも探す
-if(length(age_cols) > 0) {
-  df$age <- as.numeric(df[[age_cols[1]]])
-} else {
-  df$age <- NA
-}
-
 # 3. 分析用データの作成
-# data ではなく a.data を作成
 a.data <- data.frame(
   work_hours = df$work_hours,
   income = df$income,
   age = df$age
 ) %>% na.omit()
 
-# 読み込み結果の確認
+# データの確認
+summary(a.data$age)
 print(paste("有効サンプルサイズ:", nrow(a.data)))
-head(a.data)
 ```
 
 ```{r working_hours_and_annual_income}
-# data$work_hours ではなく a.data$work_hours を使います
-# （prepare_dataで na.omit したきれいなデータです）
-
 # 1. 散布図の描画
 plot(a.data$work_hours, a.data$income,
      main = "労働時間と年収の散布図",
      xlab = "週あたり就業時間", 
      ylab = "年収(万円)",
-     pch = 16,       # 点の形（塗りつぶし円）
-     col = "blue")   # 点の色
+     pch = 16,        
+     col = "blue")   
 
 # 2. 相関係数の算出
 cor_result <- cor.test(a.data$work_hours, a.data$income)
 print(cor_result)
 ```
 
-```{r the_effect_of_year}
-# 前のステップで作った a.data をそのまま使います
+```{r check_distribution}
+# 参考：変数の分布状況を確認
 
-# 1. 3変数の関係を可視化（パネル図）
-# psychパッケージの機能で、散布図・ヒストグラム・相関をまとめて表示します
+# 労働時間の分布
+breaks_hours <- c(0, 20, 40, 50, 60, 80, 100, Inf)
+hours_dist <- table(cut(df$work_hours, breaks = breaks_hours, right = FALSE))
+print("--- 労働時間の分布 ---")
+print(hours_dist)
+
+# 年収の分布
+breaks_income <- c(0, 100, 150, 300, 500, 700, 1000, Inf)
+income_dist <- table(cut(df$income, breaks = breaks_income, right = FALSE))
+print("--- 年収の分布 ---")
+print(income_dist)
+```
+
+
+
+```{r the_effect_of_year}
+# 1. 変数間の関係（パネル図）
 psych::pairs.panels(a.data)
 
-# 2. 年齢を制御した偏相関係数
-# ppcorパッケージを使います
-# X=労働時間, Y=年収, Z=年齢(制御変数)
+# 2. 年齢を制御した偏相関係数の算出
+# X=労働時間, Y=年収, Z=年齢
 pcor_result <- ppcor::pcor.test(a.data$work_hours, a.data$income, a.data$age, method="pearson")
 
 # 結果の表示
 print(pcor_result)
 ```
 
+
 ```{r stratified_analysis}
 library(ggplot2)
 library(dplyr)
 library(haven)
 
-# 1. データの準備
+# 1. 雇用形態データの準備
 jc_col_name <- grep("JC_1", names(df), value = TRUE)[1]
 
 if(!is.na(jc_col_name)) {
-  status_label <- as_factor(df[[jc_col_name]])
+  raw_code <- as.numeric(df[[jc_col_name]])
   
   strat_data <- data.frame(
     work_hours = df$work_hours,
     income = df$income,
-    raw_status = status_label
+    employment_code = raw_code
   )
   
+  # 雇用形態の分類
   strat_data$status <- case_when(
-    grepl("正規", strat_data$raw_status) ~ "Regular (正社員)",
-    grepl("パート|アルバイト|派遣|契約|嘱託", strat_data$raw_status) ~ "Non-Regular (非正規)",
-    TRUE ~ NA_character_ # 経営者は除外するのでNA扱いでOK
+    strat_data$employment_code == 2 ~ "Regular (正社員)",
+    strat_data$employment_code %in% c(3, 4, 5) ~ "Non-Regular (非正規)",
+    strat_data$employment_code == 1 ~ "Executive (経営者)",
+    TRUE ~ NA_character_ 
   )
   
-  # --- 修正ポイント：外れ値を厳しくカット ---
-  # 外れ値処理の強化版
-　strat_data <- strat_data %>% 
-  filter(!is.na(work_hours) & !is.na(income) & !is.na(status)) %>%
-  filter(work_hours < 80) %>%  # 週80時間以上を除外（過労死ライン超えの外れ値）
-  filter(!(status == "Regular (正社員)" & income < 150)) # 正規で年収150万未満を除外（途中入社などを想定）
-    
-  # 2. グラフ描画
+  # 分析対象のフィルタリング
+  strat_data <- strat_data %>% 
+    filter(!is.na(work_hours) & !is.na(income) & !is.na(status)) %>%
+    filter(work_hours < 80) %>% # 極端な長時間労働を除外
+    filter(status != "Executive (経営者)") %>%
+    filter(!(status == "Regular (正社員)" & income < 150)) # 特殊な低年収層を除外
+
+  print("--- 分析対象の雇用形態別人数 ---")
+  print(table(strat_data$status))
+
+  # 2. 層別散布図の描画
   print(
     ggplot(strat_data, aes(x = work_hours, y = income, color = status)) +
-    geom_point(alpha = 0.5) +          
+    geom_jitter(width = 0.5, height = 0.5, alpha = 0.5) +
     geom_smooth(method = "lm", se = FALSE) + 
-    labs(title = "正規 vs 非正規：労働時間と年収（週80時間未満）",
+    labs(title = "雇用形態別：労働時間と年収の関係",
          x = "週あたり労働時間",
          y = "年収（万円）",
          color = "雇用形態") +
     theme_minimal()
   )
   
-  # 3. 相関係数の再計算
+  # 3. 層別相関係数の算出
   print(
     strat_data %>%
     group_by(status) %>%
@@ -167,6 +200,57 @@ if(!is.na(jc_col_name)) {
   )
   
 } else {
-  print("JC_1変数が見つかりません")
+  print("雇用形態変数が見つかりません")
 }
 ```
+
+```{r the_effect_of_year_straified}
+# 雇用形態ごとに、年齢を制御した偏相関係数を算出
+
+# 変数の再統合
+final_data <- data.frame(
+  work_hours = df$work_hours,
+  income = df$income,
+  age = df$age,
+  employment_code = as.numeric(df[[grep("JC_1", names(df), value=TRUE)[1]]])
+)
+
+# 雇用形態の分類
+final_data$status <- case_when(
+  final_data$employment_code == 2 ~ "Regular (正社員)",
+  final_data$employment_code %in% c(3, 4, 5) ~ "Non-Regular (非正規)",
+  TRUE ~ NA_character_ 
+)
+
+# フィルタリング処理
+final_data <- final_data %>% 
+  filter(!is.na(work_hours) & !is.na(income) & !is.na(age) & !is.na(status)) %>%
+  filter(work_hours < 80) %>%
+  filter(!(status == "Regular (正社員)" & income < 150)) %>%
+  filter(status != "Executive (経営者)")
+
+# グループ別偏相関係数の計算
+pcor_results <- final_data %>%
+  group_by(status) %>%
+  group_modify(~ {
+    res <- pcor.test(.x$work_hours, .x$income, .x$age, method="pearson")
+    data.frame(
+      p_correlation = res$estimate,
+      p_value = res$p.value,
+      n = res$n
+    )
+  })
+
+print("--- 雇用形態別・年齢を制御した偏相関係数 ---")
+print(pcor_results)
+```
+
+#考察
+
+本分析で得られた「正規雇用において労働時間と年収が無相関（あるいは負の相関）」という結果は、日本の雇用慣行と労働市場の構造を強く反映していると考えられる。
+
+（1）賃金決定メカニズムの相違 非正規雇用において正の相関（0.36）が見られたのは、基本給与が「時給制」であり、労働投入量が直接的に所得に反映されるためである。 対して、正規雇用は「職能給」や「固定給（月給制）」が中心である。特に若年層においては、残業代が固定残業代として給与に含まれていたり、サービス残業が存在したりすることで、労働時間の長さが限界的な報酬増に直結しない「定額働かせ放題」に近い構造が存在することが示唆される。
+
+（2）長時間労働の質の二極化 正規雇用における負の相関（-0.09）は、労働時間が長い層が必ずしも高所得層ではないことを示している。 高付加価値を生み出す高年収の職種（または大企業）が適正な労働時間で働いている一方で、人手不足の現場や低賃金の職種において長時間労働が常態化している可能性がある。つまり、長時間労働は「高収入の対価」ではなく、「低い労働生産性や過酷な労働環境」の指標となっている恐れがある。
+
+（3）「103万円の壁」の影響（非正規） 非正規雇用の相関についても、本来の時給計算から想定される完全な比例関係（相関1.0に近い値）よりは弱かった。これは、扶養控除内（年収103万円以下）に収めるための就労調整が働いており、労働時間の上限が意図的にキャップされている影響が推察される。
