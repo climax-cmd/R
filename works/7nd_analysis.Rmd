@@ -1,0 +1,178 @@
+---
+title: "統計学C 第7回目 分析レポート"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "2025-12-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(haven)
+library(car)
+library(broom) # 回帰分析の結果をきれいな表にする用
+```
+
+
+```{r prepare_data}
+# 1. データの読み込み
+if (file.exists("PY140.sav")) {
+  df <- read_sav("PY140.sav")
+} else if (file.exists("PY140.dta")) {
+  df <- read_dta("PY140.dta")
+} else {
+  stop("ファイルが見つかりません。")
+}
+
+# --- 変数の加工 ---
+
+# (1) 年齢 (Age)
+birth_col <- grep("ybirth|ZQ01.*Y|birth", names(df), ignore.case = TRUE, value = TRUE)[1]
+if (!is.na(birth_col)) {
+  birth_year <- as.numeric(df[[birth_col]])
+  birth_year <- ifelse(birth_year < 1900, birth_year + 1900, birth_year)
+  birth_year[birth_year > 2007] <- NA
+  df$age <- 2007 - birth_year
+} else {
+  if("ZQ2" %in% names(df)) df$age <- as.numeric(df$ZQ2) else df$age <- NA
+}
+
+# (2) 労働時間 (Work Hours)
+target_col_name <- "ZQ05_2"
+if (!target_col_name %in% names(df)) {
+   target_col_name <- grep("ZQ05_2", names(df), ignore.case = TRUE, value = TRUE)[1]
+}
+if (!is.na(target_col_name)) {
+  df$work_hours <- car::recode(as.numeric(df[[target_col_name]]),
+    '1=15; 2=25; 3=32.5; 4=37.5; 5=40; 6=50; 
+     7=NA; 8=NA; 88=NA; 99=NA; else=NA')
+} else {
+  df$work_hours <- NA
+}
+
+# (3) 年収 (Income)
+if("ZQ47A" %in% names(df)) {
+  df$income <- car::recode(as.numeric(df$ZQ47A), 
+    '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 
+     8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; 
+     14=NA; 99=NA; else=NA')
+} else {
+  df$income <- NA
+}
+
+# (4) 性別 (Female Dummy)
+sex_col <- grep("ZQ01_1|ZQ01|sex|gender", names(df), ignore.case = TRUE, value = TRUE)[1]
+if(!is.na(sex_col)) {
+  # 男性(1)=0, 女性(2)=1
+  df$female <- car::recode(as.numeric(df[[sex_col]]), '1=0; 2=1; else=NA')
+} else {
+  df$female <- NA
+}
+
+# (5) 学歴 (Education Years)
+educ_col <- grep("ZQ23|ZQ45|educ|学歴", names(df), ignore.case = TRUE, value = TRUE)[1]
+if(!is.na(educ_col)) {
+  # 中学(9), 高校(12), 専門短大(14), 大学(16), 大学院(18)
+  df$educ_years <- car::recode(as.numeric(df[[educ_col]]),
+    '1=9; 2=12; 3=14; 4=14; 5=16; 6=18; else=NA')
+} else {
+  df$educ_years <- NA
+}
+
+# (6) 雇用形態 (Employment Status)
+# ここで正社員だけを抽出するためのフラグを作ります
+jc_col <- grep("JC_1", names(df), value = TRUE)[1]
+if(!is.na(jc_col)) {
+  # コード2が正社員
+  df$is_regular <- ifelse(as.numeric(df[[jc_col]]) == 2, 1, 0)
+} else {
+  df$is_regular <- 0
+  warning("雇用形態変数(JC_1)が見つかりません")
+}
+
+# --- 分析用データの作成（正社員限定） ---
+reg_data_regular <- data.frame(
+  income = df$income,
+  age = df$age,
+  educ_years = df$educ_years,
+  female = df$female,
+  work_hours = df$work_hours,
+  is_regular = df$is_regular
+) %>% 
+  # まず欠損値を削除
+  na.omit() %>%
+  # 次に「正社員フラグが1」の人だけを残す
+  filter(is_regular == 1) %>%
+  # 正社員の中で、異常に年収が低い人（150万未満）や極端な長時間労働を除外
+  filter(income >= 150) %>%
+  filter(work_hours < 80)
+
+print(paste("分析対象（正社員）サンプルサイズ: N =", nrow(reg_data_regular)))
+head(reg_data_regular)
+```
+
+```{r regression_analysis}
+library(broom)
+library(dplyr)
+
+# 1. 重回帰分析の実行（正社員のみ）
+model_reg <- lm(income ~ age + educ_years + female + work_hours, data = reg_data_regular)
+
+# 2. 結果の表示
+summary(model_reg)
+
+# 3. きれいな表の作成
+result_table <- broom::tidy(model_reg) %>%
+  mutate(
+    stars = case_when(
+      p.value < 0.001 ~ "***",
+      p.value < 0.01  ~ "**",
+      p.value < 0.05  ~ "*",
+      p.value < 0.1   ~ "†",
+      TRUE            ~ ""
+    ),
+    estimate = round(estimate, 2),
+    std.error = round(std.error, 2)
+  ) %>%
+  mutate(Coef_Star = paste0(estimate, stars)) %>%
+  dplyr::select(term, Coef_Star, std.error) %>%
+  rename(
+    変数 = term,
+    回帰係数 = Coef_Star,
+    標準誤差 = std.error
+  )
+
+# 変数名の日本語化
+result_table$変数 <- case_when(
+  result_table$変数 == "(Intercept)" ~ "切片",
+  result_table$変数 == "age" ~ "年齢",
+  result_table$変数 == "educ_years" ~ "教育年数",
+  result_table$変数 == "female" ~ "性別(女性ダミー)",
+  result_table$変数 == "work_hours" ~ "週労働時間",
+  TRUE ~ result_table$変数
+)
+
+# モデル適合度
+glance_data <- broom::glance(model_reg)
+adj_r2 <- round(glance_data$adj.r.squared, 3)
+sample_n <- glance_data$n
+
+# 出力
+print("--- 重回帰分析の結果（正社員限定） ---")
+knitr::kable(result_table, caption = "正社員の年収規定要因")
+
+print(paste("サンプルサイズ N =", sample_n))
+print(paste("調整済みR2乗値 =", adj_r2))
+print("注: ***p<0.001, **p<0.01, *p<0.05, †p<0.1")
+```
+
+##考察
+
+非正規雇用を含めると高時給で底時間労働のサンプルと定時級で長時間労働のサンプルが混ざってしまい、また103万円のかべなどの条件も関与してくるため今回は調査対象を正社員のみに限定した.
+
+(1)労働時間と年収には負の相関があり、日本の正規雇用において残業代が固定給に含まれるなど労働時間が賃金体系に直結しない構造と長時間労働が常態化している職種ほど相対的に賃金水準が低いという傾向が認められる。
+(2)個人の成果や労働時間よりも年齢や学歴などの要素の方が大きいことが認められる。伝統的な日本型雇用が根強く残っていることを示している。
+(3)男女賃金格差が他の要素の比べ非常に係数が大きく、職種や役職への登用に対しての性別分離の影響が考えられる。
