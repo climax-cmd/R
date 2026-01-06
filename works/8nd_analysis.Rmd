@@ -1,0 +1,142 @@
+---
+title: "統計学C 第8回 分析レポート"
+subtitle: "JLSPY-Jデータ(PY140)を用いた重回帰分析・ダミー変数・交互作用"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+# チャンクオプションの設定
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# 必要なパッケージの読み込み
+library(tidyverse)
+library(car)
+library(haven) # データ読み込み用
+```
+
+```{r prepare_data}
+# データの読み込み（csv, sav, dta いずれかに対応）
+if (file.exists("PY140.csv")) {
+  data <- read_csv("PY140.csv")
+} else if (file.exists("PY140.sav")) {
+  data <- read_sav("PY140.sav")
+} else if (file.exists("PY140.dta")) {
+  data <- read_dta("PY140.dta")
+} else {
+  stop("データファイル(PY140)が見つかりません。")
+}
+
+# --- 変数の作成 ---
+
+# 1. 女性ダミーの作成 (women_d)
+# 元のsex変数: 1=男性, 2=女性
+# 変換後: 0=男性, 1=女性
+data$women_d <- car::recode(as.numeric(data$sex), '1=0; 2=1')
+data$women_d <- as.factor(data$women_d)
+
+# 2. 教育年数 (reseduy)
+# ZQ23Aを教育年数に換算
+data$reseduy <- car::recode(as.numeric(data$ZQ23A), 
+                            "1=9; 2=12; 3=14; 4=14; 5=16; 6=18; 7=NA; 9=NA")
+
+# 3. 年収 (resincome)
+# ZQ47A(カテゴリ)を金額(中央値)に換算
+data$resincome <- car::recode(as.numeric(data$ZQ47A), 
+                              '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 
+                               8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; 
+                               14=NA; 99=NA')
+
+# 4. 年齢 (age)
+# 生まれ年(ybirth)から2007年時点の年齢を計算
+data$age <- data$ybirth
+data$age <- 2007 - data$age
+```
+
+```{r basic_model}
+# モデル3: 年収 ~ 年齢 + 女性ダミー + 教育年数
+regresult3 <- lm(resincome ~ age + women_d + reseduy, data = data)
+summary(regresult3)
+```
+
+```{r non_linear_model}
+# モデル4: 年齢の2乗項を追加
+regresult4 <- lm(resincome ~ age + I(age^2) + women_d + reseduy, data = data)
+summary(regresult4)
+
+vif(regresult4)
+```
+
+```{r dummy_variable_for_educational_background}
+# 学歴ダミーの作成 (resedu_d)
+# 基準(0): 高卒(2)
+# ダミー1: 中卒(1)
+# ダミー2: 専門・短大・高専(3,4)
+# ダミー3: 大卒・院卒(5,6)
+data$resedu_d <- car::recode(as.numeric(data$ZQ23A), 
+                             '1=1; 2=0; 3=2; 4=2; 5=3; 6=3; 7=NA; 9=NA')
+data$resedu_d <- as.factor(data$resedu_d)
+
+# モデル5: 教育年数の代わりに学歴ダミーを使用
+regresult5 <- lm(resincome ~ age + women_d + resedu_d, data = data)
+summary(regresult5)
+```
+
+```{r unemployed_dummy}
+# 無職ダミーの作成 (nojob_d)
+# ZQ03: 1=仕事あり(0), 2=仕事なし(1)
+data$nojob_d <- car::recode(as.numeric(data$ZQ03), '1=0; 2=1')
+data$nojob_d <- as.factor(data$nojob_d)
+
+# クロス集計で確認
+table(性別=data$women_d, 無業=data$nojob_d)
+
+# モデル6: 無職ダミーを追加
+regresult6 <- lm(resincome ~ age + women_d + nojob_d + resedu_d, data = data)
+summary(regresult6)
+```
+
+```{r by_gender}
+# 男性のみ (women_d == 0)
+print("--- 男性のみの結果 ---")
+regresult7 <- lm(resincome ~ age + nojob_d + resedu_d, 
+                 data = data, subset = (women_d == 0))
+summary(regresult7)
+
+# 女性のみ (women_d == 1)
+print("--- 女性のみの結果 ---")
+regresult8 <- lm(resincome ~ age + nojob_d + resedu_d, 
+                 data = data, subset = (women_d == 1))
+summary(regresult8)
+```
+
+```{r interaction_terms}
+# モデル9: 年齢 × 女性ダミー の交互作用を追加
+regresult9 <- lm(resincome ~ age + women_d + nojob_d + resedu_d + women_d:age, data = data)
+summary(regresult9)
+
+vif(regresult9, type = 'predictor')
+
+# 予測値をプロットして傾向を確認
+ggplot(data %>% filter(!is.na(resincome) & !is.na(age) & !is.na(women_d)), 
+       aes(x = age, y = resincome, color = women_d)) +
+  geom_jitter(alpha = 0.3, height = 0.5) + # 実データ（散布図）
+  geom_smooth(method = "lm", se = TRUE) +  # 回帰直線
+  labs(title = "年齢と年収の関係（男女別）",
+       subtitle = "交互作用の可視化：女性（赤）の方が傾きが緩やかであるか？",
+       x = "年齢", y = "年収（万円）",
+       color = "性別 (0:男, 1:女)") +
+  theme_minimal()
+```
+
+#考察
+
+男性の年収は年齢とともに急上昇(+23.6)する年功序列型なのに対し、女性の年収は年齢による上昇幅が極めて小さく（傾き約6.0）、ほぼフラットに近い。
+
+この結果は、女性が結婚・出産等のライフイベントによりキャリア形成や昇進の機会を逸しやすいこと、あるいは企業側が女性を補助的な業務に固定しがちであるという統計的差別や職域分離の存在を強く示唆している。
+
+最終課題は計量経済学に関連するテーマにしようかなと思っています。

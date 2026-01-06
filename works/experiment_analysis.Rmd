@@ -1,0 +1,181 @@
+---
+title: "実験データ分析：長さと秒数の一元配置分散分析"
+author: "Analysis Report"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# 必要なライブラリの読み込み
+# library(car) # 必要に応じて有効化
+```
+
+```{r make_data}
+# --- データの入力 ---
+# 画像データに基づく入力 (単位: 秒)
+y_2cm  <- c(1.31, 1.20, 1.25, 1.22, 1.09)
+y_4cm  <- c(1.47, 1.41, 1.69, 1.54, 1.62)
+y_6cm  <- c(1.75, 1.82, 1.85, 1.78, 1.82)
+y_8cm  <- c(1.85, 1.46, 1.87, 1.70, 2.14)
+y_10cm <- c(1.57, 1.64, 1.62, 1.46, 1.50)
+y_12cm <- c(1.04, 1.77, 1.34, 1.53, 1.39)
+
+# 全データを結合 (ベクトルy)
+y <- c(y_2cm, y_4cm, y_6cm, y_8cm, y_10cm, y_12cm)
+
+# 群を表す因子ベクトルを作成 (各5回繰り返し、計6水準)
+# グラフでの表示順序を保つため、levelsを指定
+groups <- c("2cm", "4cm", "6cm", "8cm", "10cm", "12cm")
+x <- factor(rep(groups, each = 5), levels = groups)
+
+# データフレームとして確認
+data_df <- data.frame(Length = x, Time = y)
+print(head(data_df)) # 最初の数行を表示
+print(tail(data_df)) # 最後の数行を表示
+```
+
+```{r visalize}
+# 全体の平均
+mean_total <- mean(y)
+
+# 各群の平均を計算 (tapplyを使用)
+group_means <- tapply(y, x, mean)
+
+print(paste("全体平均:", round(mean_total, 3)))
+print("各群(長さ)の平均:")
+print(round(group_means, 3))
+
+# 箱ひげ図の描画
+boxplot(y ~ x, 
+        main = "長さごとの秒数の箱ひげ図",
+        xlab = "長さ (cm)",
+        ylab = "秒数 (s)",
+        col = "lightblue")
+# 平均値を赤点で追加
+points(1:6, group_means, pch=16, col="red")
+```
+
+```{r calculate}
+# --- 平方和の計算 (Sum of Squares) ---
+
+# 1. SST: 総平方和 (Total Sum of Squares)
+SST <- sum((y - mean(y))^2)
+
+# 2. SSA: 群間平方和 (Sum of Squares Between Groups)
+# 各群の平均と全体平均の差の二乗 × データ数(5)
+# 手計算のロジックを再現
+SSA_parts <- 5 * (group_means - mean_total)^2
+SSA <- sum(SSA_parts)
+
+# 3. SSE: 誤差平方和 (Sum of Squares Error)
+# 各データと、その群の平均との差の二乗和
+# 各群ごとの分散計算を行い、合計する手法と同義
+SSE_parts <- tapply(y, x, function(v) sum((v - mean(v))^2))
+SSE <- sum(SSE_parts)
+
+# 結果の表示
+cat("SST (総平方和):", SST, "\n")
+cat("SSA (群間平方和):", SSA, "\n")
+cat("SSE (誤差平方和):", SSE, "\n")
+```
+
+```{r check}
+# --- 分散分析表の要素計算 ---
+
+# 定数定義
+a <- 6       # 水準数 (群の数)
+n <- 5       # 繰り返し数
+N <- a * n   # 総データ数 (30)
+
+# 自由度 (Degrees of Freedom)
+df_A <- a - 1      # 群間の自由度 (6 - 1 = 5)
+df_E <- N - a      # 誤差の自由度 (30 - 6 = 24)
+
+# 平均平方 (Mean Squares: 不偏分散)
+VA <- SSA / df_A
+VE <- SSE / df_E
+
+# F値の計算
+Fval <- VA / VE
+
+# p値の計算 (F分布の上側確率)
+pval <- 1 - pf(Fval, df_A, df_E)
+
+# 棄却限界値 (有意水準5%)
+critical_val <- qf(0.95, df_A, df_E)
+
+# 結果出力
+cat("自由度(群間):", df_A, "\n")
+cat("自由度(誤差):", df_E, "\n")
+cat("平均平方(VA):", VA, "\n")
+cat("平均平方(VE):", VE, "\n")
+cat("F値:", Fval, "\n")
+cat("p値:", pval, "\n")
+cat("棄却限界値(95%):", critical_val, "\n")
+
+if(pval < 0.05) {
+  cat("判定: 有意差あり (p < 0.05). 長さによって秒数に違いがあると言える。\n")
+} else {
+  cat("判定: 有意差なし (p >= 0.05).\n")
+}
+```
+
+```{r multiple_regression}
+# --- 行列を用いた最小二乗法の確認 ---
+# デザイン行列 X の作成 
+# (切片1列 + ダミー変数5列 = 6列, 行数は30)
+# 2cmを基準(Intercept)とし、4cm～12cmをダミー変数とする
+
+# 1列目: 切片 (すべて1)
+col_intercept <- rep(1, N)
+
+# ダミー変数の作成 (各群に対応する行だけ1、それ以外0)
+# 例: 4cm群なら、6～10行目が1
+col_4cm  <- rep(c(0,1,0,0,0,0), each=5)
+col_6cm  <- rep(c(0,0,1,0,0,0), each=5)
+col_8cm  <- rep(c(0,0,0,1,0,0), each=5)
+col_10cm <- rep(c(0,0,0,0,1,0), each=5)
+col_12cm <- rep(c(0,0,0,0,0,1), each=5)
+
+# 行列結合
+matx <- cbind(col_intercept, col_4cm, col_6cm, col_8cm, col_10cm, col_12cm)
+
+# 行列の確認 (大きすぎるため最初の10行のみ表示)
+print("デザイン行列 X (先頭10行):")
+print(head(matx, 10))
+
+# パラメータ beta の推定: beta = (X'X)^-1 X'y
+# 行列演算
+XtX <- t(matx) %*% matx
+XtX_inv <- solve(XtX)
+Xty <- t(matx) %*% y
+beta <- XtX_inv %*% Xty
+
+# 行名の設定 (結果を見やすくするため)
+rownames(beta) <- c("Intercept(2cm)", "Diff_4cm", "Diff_6cm", 
+                    "Diff_8cm", "Diff_10cm", "Diff_12cm")
+
+print("行列演算で推定されたパラメータ:")
+print(beta)
+print("※ Interceptは2cmの平均、他は2cmとの差を表します")
+```
+
+```{r double_check}
+# --- Rの組込関数による検算 ---
+
+# 線形回帰モデル (lm)
+model <- lm(y ~ x)
+
+print("--- lm関数の結果 (係数) ---")
+print(coef(model))
+
+# 分散分析表 (anova)
+print("--- 分散分析表 (ANOVA Table) ---")
+anova_res <- anova(model)
+print(anova_res)
+```
