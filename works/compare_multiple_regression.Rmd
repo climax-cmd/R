@@ -1,0 +1,90 @@
+---
+title: "重回帰分析のモデル比較2"
+author: "Ryuji Uozumi (Based on Lecture Materials)"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+# グローバルオプション設定
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r prepare_data}
+# ライブラリの読み込み
+# install.packages("psych") # 初回のみ実行
+library(psych)
+
+# データの読み込み
+cs <- read.csv("CS.csv")
+cs2 <- read.csv("CS2.csv", header=TRUE, fileEncoding="cp932")
+```
+
+```{r visualize}
+csdata <- cs[2:7]
+psych::pairs.panels(csdata)
+cs2data <- cs2[2:7]
+psych::pairs.panels(cs2data)
+```
+
+```{r check_basic_statistics}
+# 平均値の確認
+mean(cs2$x2)
+mean(cs2$x3)
+mean(cs2$x3, na.rm=TRUE)
+
+
+mean(cs2$x4)
+
+# クロス集計表
+print("Table: CS x3")
+table(cs$x3)
+
+print("Table: CS x4")
+table(cs$x4)
+
+print("Table: CS2 x4")
+table(cs2$x4)
+
+print("Table: CS2 x7")
+table(cs2$x7)
+
+print("Table: CS2 x8")
+table(cs2$x8)
+```
+
+```{r multiple_regression}
+#model1
+# CSデータでの分析
+fit1_cs <- lm(y ~ x2 + x3 + x4 + x5, data=cs)
+summary(fit1_cs)
+
+# CS2データでの分析
+fit1_cs2 <- lm(y ~ x2 + x3 + x4 + x5, data=cs2)
+summary(fit1_cs2)
+extractAIC(fit1_cs2)
+
+#model2
+
+# CSデータでの分析
+fit2_cs <- lm(y ~ x2 + x3 + x4 + x5 + x7 + x8, data=cs)
+summary(fit2_cs)
+
+# CS2データでの分析
+fit2_cs2 <- lm(y ~ x2 + x3 + x4 + x5 + x7 + x8, data=cs2)
+summary(fit2_cs2)
+
+#model3
+
+# CSデータでの分析
+fit3_cs <- lm(y ~ x2 + x3 + x4 + x5 + x8, data=cs)
+summary(fit3_cs)
+
+# CS2データでの分析
+fit3_cs2 <- lm(y ~ x2 + x3 + x4 + x5 + x8, data=cs2)
+summary(fit3_cs2)
+```
