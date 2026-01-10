@@ -1,0 +1,75 @@
+---
+title: "授業資料コード：サンプルサイズ設計と検出力曲線"
+author: "Analysis Report"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# パッケージのインストール確認
+if(!require(pwr)) install.packages("pwr", repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+library(pwr)
+```
+
+```{r sekkei}
+# [cite_start]--- パラメータの設定 [cite: 444-447] ---
+diff <- 7       # 検出したい差 (Delta)
+sd <- 12        # 標準偏差 (SD)
+alpha <- 0.05   # 有意水準 (Alpha)
+beta <- 0.2     # 第2種の過誤 (Beta) -> 検出力は 1 - beta = 0.8
+
+# [cite_start]--- 統計量の計算 [cite: 448-449] ---
+# 標準正規分布の上側パーセント点
+za <- qnorm(1 - alpha/2)  # 両側検定なので alpha/2
+zb <- qnorm(1 - beta)     # 検出力に対応する点
+
+# [cite_start]--- サンプルサイズの計算式 [cite: 450] ---
+# 公式: n = 2 * (za + zb)^2 * SD^2 / Delta^2
+n <- 2 * (za + zb)^2 * sd^2 / diff^2
+
+# 結果の表示
+print(paste("手計算による必要サンプルサイズ (n):", n))
+```
+
+```{r pwr}
+# [cite_start]--- 効果量 (Effect Size) の計算 [cite: 455] ---
+es <- diff / sd
+
+# [cite_start]--- pwr.t.test による計算 [cite: 456-457] ---
+# d: 効果量, power: 検出力, sig.level: 有意水準
+res <- pwr.t.test(d = es, 
+                  power = 0.80, 
+                  sig.level = 0.05)
+
+# [cite_start]結果の表示 [cite: 458-461]
+print(res)
+```
+
+```{r visualize}
+# [cite_start]--- x軸: サンプルサイズの範囲を作成 [cite: 471-472] ---
+nrange <- seq(40, 60, 1)
+
+# [cite_start]--- 各nに対応する検出力を計算 [cite: 473-475] ---
+# nにベクトル(nrange)を渡すことで、一括計算できます
+pwr_res <- pwr.t.test(d = es, 
+                      n = nrange, 
+                      sig.level = 0.05)
+
+# [cite_start]--- データフレームにまとめる [cite: 476-477] ---
+pwrcurve <- data.frame(n = nrange, 
+                       power = pwr_res$power * 100) # %表記にするため100倍
+
+# [cite_start]--- グラフの描画 [cite: 478-483] ---
+plot(pwrcurve$n, pwrcurve$power,
+     type = "b",               # 線と点 (both)
+     xlab = "Sample size",     # x軸ラベル
+     ylab = "Power (%)",       # y軸ラベル
+     xlim = c(40, 60),         # x軸の範囲
+     ylim = c(70, 90),         # y軸の範囲（見やすく調整）
+     main = "サンプルサイズに対する検出力の推移図")
+```

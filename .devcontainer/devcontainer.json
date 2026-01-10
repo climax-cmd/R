@@ -17,7 +17,7 @@
     }
   },
   "extensions": ["ikuyadeu.r"],
-  "shutdownAction": "none",
+  "shutdownAction": "stopContainer",
 
   "remoteUser": "root"
 }
