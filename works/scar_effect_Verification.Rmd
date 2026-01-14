@@ -1,0 +1,398 @@
+---
+title: "初期キャリアの傷跡効果に関する実証分析"
+subtitle: "JLPSパネルデータ（Wave1-14）を用いた長期的所得推移の検証"
+author: "レポート作成者"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document: 
+    latex_engine: xelatex
+    number_sections: true
+    toc: true
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+---
+
+```{r setup, include=FALSE}
+# チャンクオプションの設定
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+# 必要なパッケージの読み込み
+library(tidyverse)
+library(car)      # リコード用
+library(haven)    # データ読み込み用
+library(plm)      # パネルデータ分析用
+library(stargazer) # 回帰結果の表出力用
+library(ggsci)    # グラフの色使い用
+```
+
+```{r prepare_data}
+# データの読み込み（メタデータを持つ .sav や .dta を優先する）
+file_name <- "PY140" # 拡張子なしのファイル名
+
+# 優先順位変更: SAV -> DTA -> CSV
+# ※ CSVはラベル情報を持たないため、分析の最後尾にします
+if (file.exists(paste0(file_name, ".sav"))) {
+  # havenパッケージで読み込むと日本語ラベル(attr)が保持されます
+  raw_data <- read_sav(paste0(file_name, ".sav"))
+  print(paste("読み込み完了: ", file_name, ".sav (ラベル情報あり)"))
+  
+} else if (file.exists(paste0(file_name, ".dta"))) {
+  raw_data <- read_dta(paste0(file_name, ".dta"))
+  print(paste("読み込み完了: ", file_name, ".dta (ラベル情報あり)"))
+  
+} else if (file.exists(paste0(file_name, ".csv"))) {
+  raw_data <- read_csv(paste0(file_name, ".csv"))
+  warning("注意: CSVファイルを読み込みました。変数ラベル（日本語の質問文）は検索できません。")
+  
+} else {
+  stop("データファイル(PY140)が見つかりません。作業ディレクトリに .sav ファイルがあるか確認してください。")
+}
+```
+
+
+```{r search_variables_by_label}
+# --- 日本語ラベルによる変数特定スクリプト ---
+library(stringr) # 文字列操作用
+
+# 1. 全変数の「変数名」と「ラベル(日本語)」を抽出してデータフレーム化
+# map_chrなどを使い、ラベルがない(NULL)場合は空文字にする
+var_labels <- data.frame(
+  var_name = names(raw_data),
+  var_label = sapply(raw_data, function(x) {
+    lbl <- attr(x, "label")
+    if (is.null(lbl)) return("") else return(as.character(lbl))
+  }),
+  stringsAsFactors = FALSE
+)
+
+# 2. 検索対象のWaveプレフィックス
+waves <- c("ZQ", "AQ", "BQ", "CQ", "DQ", "EQ", "FQ", 
+           "GQ", "HQ", "IQ", "JQ", "KQ", "LQ", "MQ")
+
+# 3. 検索キーワードの設定（正規表現）
+# 年収: 「本人」という言葉が含まれ、かつ「収」が含まれるもの（世帯年収を除外するため）
+income_keywords <- "本人.*収|収.*本人" 
+
+# 就業: 「仕事」が含まれ、かつ「有無」や「している」などが含まれるもの
+# または単純に「問X」で探したい場合は "^(?=.*仕事)(?=.*(有無|している|就いて)).*$" など
+job_keywords <- "仕事.*(有無|している|就いて)|(有無|している|就いて).*仕事"
+
+print("--- 変数ラベル検索結果 ---")
+
+for (prefix in waves) {
+  cat(paste0("\n▼ Wave: ", prefix, " ------------------------------\n"))
+  
+  # そのWaveの変数だけをフィルタリング（先頭が prefix で始まるもの）
+  wave_vars <- var_labels %>% 
+    filter(str_detect(var_name, paste0("^", prefix)))
+  
+  # A. 年収変数の検索
+  # ラベルにキーワードが含まれるか、または変数名が「47」を含む（念のため）
+  found_income <- wave_vars %>%
+    filter(str_detect(var_label, income_keywords) | str_detect(var_name, "47")) %>%
+    select(var_name, var_label)
+  
+  if (nrow(found_income) > 0) {
+    cat("【年収・収入 (候補)】\n")
+    # 見やすく整形して出力
+    for(j in 1:nrow(found_income)) {
+      cat(sprintf("  %-10s : %s\n", found_income$var_name[j], found_income$var_label[j]))
+    }
+  } else {
+    cat("  (年収候補なし)\n")
+  }
+  
+  # B. 就業変数の検索
+  # ラベルにキーワードが含まれるか、または変数名が「03」を含む
+  found_job <- wave_vars %>%
+    filter(str_detect(var_label, job_keywords) | str_detect(var_name, "03")) %>%
+    select(var_name, var_label)
+  
+  if (nrow(found_job) > 0) {
+    cat("【就業状態 (候補)】\n")
+    for(k in 1:nrow(found_job)) {
+      cat(sprintf("  %-10s : %s\n", found_job$var_name[k], found_job$var_label[k]))
+    }
+  } else {
+    cat("  (就業候補なし)\n")
+  }
+}
+```
+
+```{r extracting_and_manipulating_variables}
+# --- 1. 静的変数の作成 (修正版 v2) ---
+
+static_data <- raw_data %>%
+  select(PanelID, sex, ybirth, JE_1, JC_1, ZQ23A) %>%
+  mutate(
+    # 性別 (0=男性, 1=女性)
+    women_d = as.factor(car::recode(as.numeric(sex), '1=0; 2=1')),
+    
+    # 教育年数
+    reseduy = car::recode(as.numeric(ZQ23A), 
+                          "1=9; 2=12; 3=14; 4=14; 5=16; 6=18; else=NA"),
+    
+    # 【重要修正】初職情報の統合ロジック
+    # 1. JE_1(初職)がある人 -> JE_1を使う
+    # 2. JE_1がNA(空白) または 88(非該当) だが、JC_1(現職)はある人 -> JC_1を使う
+    first_job_type_combined = case_when(
+      !is.na(JE_1) & JE_1 %in% 1:8 ~ as.numeric(JE_1),
+      (is.na(JE_1) | JE_1 == 88) & !is.na(JC_1) ~ as.numeric(JC_1), 
+      TRUE ~ NA_real_
+    ),
+
+    # 正規・非正規ダミー
+    # 1=正規(経営者・正社員), 0=非正規(パート・派遣・請負・内職)
+    # ※自営(6)と家族従業(7)はNAにして除外
+    first_job_regular = car::recode(first_job_type_combined, 
+                                    "1=1; 2=1; 3=0; 4=0; 5=0; 8=0; 6=NA; 7=NA; else=NA"),
+                                    
+    first_job_regular_label = factor(first_job_regular, 
+                                     levels = c(0, 1), 
+                                     labels = c("Initial_NonRegular", "Initial_Regular"))
+  )
+
+# --- 確認用コード ---
+# これを実行して、Initial_Regular の数が増えているか確認してください
+print("初職区分の人数内訳:")
+table(static_data$first_job_regular_label, useNA = "always")
+```
+
+
+```{r create_panel_data_corrected}
+# --- パネルデータ作成（変数名対応版） ---
+
+# 1. 各Waveで使う変数を定義（PDFの検索結果に基づき修正済み）
+var_map <- list(
+  # Wave 1: ZQ47A (本人年収), ZQ03 (就業)
+  c("ZQ", "ZQ47A", "ZQ03"),
+  
+  # Wave 2: AQ48A (本人年収) ※AQ47は住居
+  c("AQ", "AQ48A", "AQ03_1"),
+  
+  # Wave 3: BQ36A (本人年収) ※BQ47は結婚観
+  c("BQ", "BQ36A", "BQ03_1"),
+  
+  # Wave 4: CQ37A (本人年収) ※CQ47は配偶者
+  c("CQ", "CQ37A", "CQ03_1"),
+  
+  # Wave 5: DQ35A (本人年収) ※DQ47は婚姻届
+  c("DQ", "DQ35A", "DQ03_1"),
+  
+  # Wave 6: EQ34A (本人年収) ※EQ47は配偶者学歴
+  c("EQ", "EQ34A", "EQ03_1"),
+  
+  # Wave 7: FQ38A (本人年収) ※FQ47は同棲
+  c("FQ", "FQ38A", "FQ03_1"),
+  
+  # Wave 8: GQ36A (本人年収) ※GQ47は婚姻届
+  c("GQ", "GQ36A", "GQ03_1"),
+  
+  # Wave 9: HQ37A (本人年収) ※HQ47は同棲
+  c("HQ", "HQ37A", "HQ03_1"),
+  
+  # Wave 10: IQ37A (本人年収) ※IQ47は家事頻度
+  c("IQ", "IQ37A", "IQ03_1"),
+  
+  # Wave 11: JQ35A (本人年収) ※JQ47は配偶者生年
+  c("JQ", "JQ35A", "JQ03_1"),
+  
+  # Wave 12: KQ38A (本人年収) ※KQ47は配偶者職
+  c("KQ", "KQ38A", "KQ03_1"),
+  
+  # Wave 13: LQ37A (本人年収) ※LQ47は同棲
+  c("LQ", "LQ37A", "LQ03_1"),
+  
+  # Wave 14: MQ38A (本人年収) ※MQ47は配偶者職
+  c("MQ", "MQ38A", "MQ03_1")
+)
+# 2. ループ処理で抽出・結合
+years <- 2007:2020
+long_list <- list()
+
+for (i in seq_along(var_map)) {
+  prefix   <- var_map[[i]][1]
+  inc_var  <- var_map[[i]][2]
+  job_var  <- var_map[[i]][3]
+  year     <- years[i]
+  
+  if (inc_var %in% names(raw_data) && job_var %in% names(raw_data)) {
+    temp_df <- raw_data %>%
+      select(PanelID, 
+             income_cat_raw = all_of(inc_var), 
+             job_status_raw = all_of(job_var)) %>%
+      mutate(
+        wave = i,
+        year = year,
+        income_cat_raw = as.numeric(income_cat_raw),
+        job_status_raw = as.numeric(job_status_raw)
+      )
+    long_list[[i]] <- temp_df
+  } else {
+    warning(paste("Wave", prefix, "の変数がみつかりません:", inc_var, "または", job_var))
+  }
+}
+
+# 3. 結合
+long_data_temp <- bind_rows(long_list)
+
+# 4. 静的変数と結合して panel_data を完成させる
+panel_data <- long_data_temp %>%
+  left_join(static_data, by = "PanelID") %>%
+  mutate(
+    # 年齢計算
+    age = year - ybirth,
+    
+    # 【追加】年齢の2乗
+    age_sq = age^2,
+
+    # 年収の数値化 (中央値)
+    income_val = car::recode(income_cat_raw, 
+                             '1=0; 2=12.5; 3=50; 4=100; 5=200; 6=300; 7=400; 
+                              8=500; 9=700; 10=1000; 11=1500; 12=2000; 13=2500; 
+                              else=NA'),
+    
+    # 無業ダミー作成
+    nojob_d = case_when(
+      job_status_raw == 1 ~ 0, # 仕事あり
+      job_status_raw == 2 ~ 1, # 仕事なし
+      TRUE ~ NA_real_
+    )
+  ) %>%  # 【修正1】パイプ演算子を行末に移動しました
+  # 分析用フィルタ：年収が0より大きい人のみに限定
+  filter(!is.na(income_val), !is.na(age), income_val > 0) # 【修正2】余分な閉じ括弧を削除しました
+
+# 確認
+print("パネルデータ作成完了")
+head(panel_data)
+```
+
+```{r visualize}
+# 平均値の集計
+summary_plot <- panel_data %>%
+  group_by(age, first_job_regular_label) %>%
+  summarise(mean_income = mean(income_val, na.rm = TRUE),
+            n = n(),
+            se = sd(income_val, na.rm = TRUE) / sqrt(n)) %>%
+  filter(age >= 20 & age <= 50) # 20歳から50歳までに限定
+
+# プロット
+ggplot(summary_plot, aes(x = age, y = mean_income, 
+                         color = first_job_regular_label, 
+                         fill = first_job_regular_label)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = mean_income - se, ymax = mean_income + se), 
+              alpha = 0.2, color = NA) +
+  labs(title = "年齢と年収の推移：初期キャリアによる違い",
+       subtitle = "初職が非正規（赤）の場合、年齢を経ても所得差は埋まらないか？",
+       x = "年齢", y = "平均年収（万円）",
+       color = "初職の形態", fill = "初職の形態") +
+  theme_minimal() +
+  scale_color_jco() +
+  scale_fill_jco()
+```
+
+```{r analysis_by_regression}
+# モデル1: プーリングOLS（ベースライン）
+model_ols <- lm(income_val ~ age + age_sq + women_d + reseduy + 
+                  first_job_regular_label, 
+                data = panel_data)
+
+# モデル2: 交差項入り（年齢とともに差がどう変化するか）
+model_interaction <- lm(income_val ~ age + age_sq + women_d + reseduy + 
+                          first_job_regular_label * age, 
+                        data = panel_data)
+
+# モデル3: ランダム効果モデル（個人ごとの異質性を考慮）
+# ※固定効果モデル(Fixed Effects)は「初職」のような時間不変変数が消去されるため、
+#   ここではランダム効果(Random Effects)を使用する。
+pdata <- pdata.frame(panel_data, index = c("PanelID", "year"))
+model_re <- plm(income_val ~ age + age_sq + women_d + reseduy + 
+                  first_job_regular_label * age, 
+                data = pdata, model = "random")
+
+# 結果の表示（テキスト形式）
+stargazer(model_ols, model_interaction, type = "text", 
+          title = "初期キャリアの傷跡効果に関する回帰分析結果",
+          column.labels = c("Base Model", "Interaction Model"),
+          covariate.labels = c("年齢", "年齢2乗", "女性ダミー", "教育年数", 
+                               "初職:正規", "初職:正規 × 年齢"),
+          keep.stat = c("n", "rsq", "adj.rsq"))
+```
+
+```{r validity_check}
+# --- 前処理結果の検証用コード ---
+
+library(ggplot2)
+library(dplyr)
+
+# 1. 静的変数（static_data）の確認
+# 特に「初職」の変数が、88（非該当）を含んでいないかチェックします
+
+print("--- 【Check 1】初職変数のクリーニング確認 ---")
+print("元の初職変数 (JE_1) に含まれていた値:")
+# 元データに88などが含まれているか確認（読み込み直後なら含まれているはず）
+# ※raw_dataが存在しない場合はスキップされます
+if(exists("raw_data")) table(raw_data$JE_1, useNA = "always")
+
+print("加工後の変数 (first_job_type_combined) の内訳:")
+# ここに「88」や「99」がなく、1~8の数値とNAだけなら成功です
+table(static_data$first_job_type_combined, useNA = "always")
+
+print("正規・非正規ダミー (first_job_regular_label) の内訳:")
+# Initial_Regular, Initial_NonRegular, NA の3種類だけなら成功
+table(static_data$first_job_regular_label, useNA = "always")
+
+
+# 2. パネルデータ（panel_data）の確認
+# 年収変数の分布と、異常値（カテゴリコードのままの小さな数字）がないかチェックします
+
+print("--- 【Check 2】年収変数の分布確認 ---")
+print("年収 (income_val) の基本統計量:")
+# Minが0または12.5以上であればOK（1, 2などのカテゴリ値が混入していないか）
+# Maxが2500などの現実的な数値か確認
+summary(panel_data$income_val)
+
+# ヒストグラムで可視化
+# 「0」付近に変な山がないか、全体が正規分布（対数正規分布）っぽい形かを確認
+g1 <- ggplot(panel_data, aes(x = income_val)) +
+  geom_histogram(binwidth = 100, fill = "skyblue", color = "black") +
+  labs(title = "年収の分布確認 (0円・NA除外後)",
+       subtitle = "※横軸がカテゴリ値(1-14)ではなく、金額(万円)になっているか確認",
+       x = "年収 (万円)", y = "度数") +
+  theme_minimal()
+print(g1)
+
+
+# 3. フィルタリング（男性限定など）の確認
+# 分析対象としたサンプルの属性に偏りがないか、意図通りか確認します
+
+print("--- 【Check 3】分析対象サンプルの確認 ---")
+
+# 性別の確認（男性限定にした場合、女性が0人になっているか）
+print("性別分布 (0=男性, 1=女性):")
+table(panel_data$women_d, useNA = "always")
+
+# 年齢の確認（異常な年齢、例えばマイナスや100歳超がないか）
+print("年齢の範囲:")
+summary(panel_data$age)
+
+# 年齢分布のプロット
+g2 <- ggplot(panel_data, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "orange", color = "black") +
+  labs(title = "年齢の分布確認",
+       x = "年齢 (歳)", y = "サンプル数") +
+  theme_minimal()
+print(g2)
+
+# 4. 正規・非正規別のデータ数確認
+# グラフを描くのに十分なサンプル数が各年齢にあるか
+g3 <- ggplot(panel_data, aes(x = age, fill = first_job_regular_label)) +
+  geom_histogram(binwidth = 1, position = "dodge") +
+  labs(title = "年齢・初職形態別のサンプル数",
+       subtitle = "※各年齢で正規・非正規ともにある程度の数が確保できているか",
+       x = "年齢", y = "サンプル数", fill = "初職形態") +
+  theme_minimal() +
+  scale_fill_jco()
+print(g3)
+```
