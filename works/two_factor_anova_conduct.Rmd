@@ -1,0 +1,76 @@
+---
+title: "紙ヘリコプター実験：二元配置分散分析レポート"
+author: "Group Analysis"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r prepare_data}
+# ファイル名を指定
+csv_file_name <- "helicopter_data.csv" 
+
+# データの読み込み
+data <- read.csv(csv_file_name)
+
+# 【重要】数値(4, 8...)を因子(グループ)として扱うための変換
+# これを行わないと、分散分析ではなく回帰分析扱いになってしまいます
+data$Length <- as.factor(data$Length)
+data$Width  <- as.factor(data$Width)
+
+# データの確認
+print("--- データの先頭 ---")
+head(data)
+str(data)
+```
+
+```{r descriptive_statistics}
+summary_table <- aggregate(Time ~ Length + Width, data = data, 
+                           FUN = function(x) c(Mean = mean(x), SD = sd(x)))
+
+# 【修正ポイント】特殊な構造(行列)になっているのを、普通のデータフレームに変換する
+summary_table <- do.call(data.frame, summary_table)
+
+# 列名をきれいにする (Time.Mean -> Mean, Time.SD -> SD)
+colnames(summary_table)[3:4] <- c("Mean", "SD")
+
+# 結果の表示
+knitr::kable(summary_table, caption = "条件ごとの平均滞空時間とばらつき")
+```
+
+```{r visualize}
+boxplot(Time ~ Length * Width, data = data,
+        col = c("lightblue", "lightgreen"),
+        main = "条件ごとの滞空時間",
+        xlab = "長さ.幅 (cm)",    # ここで単位を追加
+        ylab = "時間 (秒)")
+interaction.plot(
+  x.factor = data$Length,    
+  trace.factor = data$Width, 
+  response = data$Time,      
+  type = "b",                
+  pch = c(19, 17, 15),       # 点の形 (3水準以上にも対応)
+  col = c("blue", "red", "green"), # 線の色
+  fixed = TRUE,              
+  main = "交互作用プロット",
+  xlab = "翼の長さ (cm)",    # 単位を追加
+  ylab = "平均滞空時間 (秒)",
+  trace.label = "幅 (cm)"    # 凡例のタイトル
+)
+```
+
+```{r two_factor_anova}
+# 分散分析の実行
+model <- aov(Time ~ Length * Width, data = data)
+
+# 結果の表示
+anova_result <- anova(model)
+print(anova_result)
+```

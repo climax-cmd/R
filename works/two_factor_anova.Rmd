@@ -1,0 +1,106 @@
+---
+title: "二元配置分散分析 (Two-Way ANOVA)"
+author: "User"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 準備
+
+## パッケージとデータの読み込み
+
+まずは必要なパッケージを読み込み、Excelファイルからデータをインポートします。
+
+```{r load-data}
+# パッケージの読み込み
+# インストールされていない場合は以下のコメントアウトを外して実行してください
+# install.packages("openxlsx")
+library(openxlsx)
+
+# データの読み込み
+# ※ "TwoWayANOVA.xlsx" が作業ディレクトリにあることを確認してください
+data1 <- read.xlsx("TwoWayANOVA.xlsx", sheet = "Data1")
+data2 <- read.xlsx("TwoWayANOVA.xlsx", sheet = "Data2")
+```
+
+---
+
+# Data1 の解析
+
+`Data1` に対して、交互作用を含まない主効果のみのモデルで解析を行います。
+
+## 変数の変換
+
+数値データをカテゴリカル変数（因子）に変換します。
+
+```{r transform-data1}
+data1$Af <- factor(data1$A)
+data1$Bf <- factor(data1$B)
+```
+
+## 二元配置分散分析 (ANOVA)
+
+```{r anova-data1}
+anova1 <- anova(aov(y ~ Af + Bf, data = data1))
+anova1
+```
+
+## パラメータ推定 (回帰分析)
+
+```{r regression-data1}
+reg1 <- lm(y ~ Af + Bf, data = data1)
+summary(reg1)
+```
+
+---
+
+# Data2 の解析
+
+`Data2` に対して、交互作用を含むモデルと含まないモデルの両方で解析を行います。
+
+## 変数の変換
+
+```{r transform-data2}
+data2$Af <- factor(data2$A)
+data2$Bf <- factor(data2$B)
+```
+
+## 二元配置分散分析 (ANOVA)
+
+### 交互作用あり (Interaction Model)
+
+```{r anova-data2-interaction}
+anova21 <- anova(aov(y ~ Af + Bf + Af * Bf, data = data2))
+anova21
+```
+
+### 交互作用なし (Additive Model)
+
+```{r anova-data2-additive}
+anova22 <- anova(aov(y ~ Af + Bf, data = data2))
+anova22
+```
+
+## パラメータ推定 (回帰分析)
+
+### 交互作用ありのモデル
+
+```{r regression-data2-interaction}
+reg21 <- lm(y ~ Af + Bf + Af * Bf, data = data2)
+summary(reg21)
+```
+
+### 交互作用なしのモデル
+
+```{r regression-data2-additive}
+reg22 <- lm(y ~ Af + Bf, data = data2)
+summary(reg22)
+```

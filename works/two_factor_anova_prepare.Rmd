@@ -1,0 +1,88 @@
+---
+title: "二元配置分散分析に向けたサンプルサイズ設計"
+author: "Group Analysis"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+documentclass: bxjsarticle
+classoption: xelatex,ja=standard
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# pwrパッケージの確認と読み込み
+if(!require(pwr)) install.packages("pwr", repos = "[http://cran.us.r-project.org](http://cran.us.r-project.org)")
+library(pwr)
+```
+
+```{r parameter_extraction}
+# --- 予備実験データからの入力 ---
+# 誤差分散 (Mean Sq Residuals) [出典: experiment_analysis.pdf]
+Ve <- 0.026712
+
+# 標準偏差 (SD) の算出
+sd_val <- sqrt(Ve)
+
+print(paste("予備実験の誤差分散 (Ve):", Ve))
+print(paste("推定された標準偏差 (SD):", round(sd_val, 4), "秒"))
+```
+
+```{r sample_size_sekkei}
+# --- 実験条件の設定 ---
+a <- 3  # 因子A (長さ) の水準数
+b <- 2  # 因子B (幅) の水準数
+
+# --- 統計的パラメータ ---
+alpha <- 0.05  # 有意水準 5%
+power <- 0.80  # 検出力 80%
+f_target <- 0.25 # 効果量 f (中程度: 0.25) を想定
+
+# --- 自由度の計算 ---
+# 交互作用の分子自由度 u = (a-1)(b-1)
+u <- (a - 1) * (b - 1)
+
+# --- pwr.f2.test による計算 ---
+# f2 = f^2
+res <- pwr.f2.test(u = u, f2 = f_target^2, sig.level = alpha, power = power)
+
+# 分母自由度 v から必要なデータ数 n を逆算
+# v = a * b * (n - 1)  =>  n = v / (a*b) + 1
+n_ideal <- res$v / (a * b) + 1
+
+# --- 結果表示 ---
+cat("--- 理想的なサンプルサイズ ---\n")
+cat("想定する効果量 f:", f_target, "(中程度)\n")
+cat("必要な各群のデータ数 n:", round(n_ideal, 2), "\n")
+cat("推奨実験回数 (切り上げ): 各条件", ceiling(n_ideal), "回 (計", ceiling(n_ideal)*a*b, "回)\n")
+```
+
+```{r realistic_limit}
+# --- 現実の条件設定 ---
+n_real <- 5  # 各条件5回と仮定
+
+# --- 分母自由度の計算 ---
+v_real <- a * b * (n_real - 1)
+
+# --- 検出可能な効果量の逆算 ---
+res_real <- pwr.f2.test(u = u, v = v_real, sig.level = alpha, power = power)
+
+# 検出可能な効果量 f
+f_detectable <- sqrt(res_real$f2)
+
+# 秒数換算（概算）: 差(Delta) ≒ 2 * f * SD
+delta_detectable <- f_detectable * sd_val * 2
+
+# --- 結果表示 ---
+cat("--- n=5 (計30回) で実施する場合の検出限界 ---\n")
+cat("検出可能な効果量 f:", round(f_detectable, 3), "\n")
+if(f_detectable > 0.4) {
+  cat("判定: 大きな効果 (Large Effect) しか検出できません。\n")
+} else if (f_detectable > 0.25) {
+  cat("判定: 中〜大の効果なら検出可能です。\n")
+} else {
+  cat("判定: 小さな効果でも検出可能です。\n")
+}
+
+cat("検出可能な秒数差 (概算): 約", round(delta_detectable, 2), "秒 以上の差が必要\n")
+```

@@ -1,9 +1,9 @@
-This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2025.12.8)  20 JAN 2026 01:33
+This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2025.12.8)  20 JAN 2026 03:14
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
-**experiment_analysis.tex
-(./experiment_analysis.tex
+**two_factor_anova_prepare.tex
+(./two_factor_anova_prepare.tex
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
 (/usr/share/texlive/texmf-dist/tex/latex/bxjscls/bxjsarticle.cls
@@ -539,8 +539,8 @@ File: bkm-dvipdfm.def 2023-12-10 v1.31 bookmark driver for dvipdfm (HO)
 \BKM@id=\count326
 )) (/usr/share/texlive/texmf-dist/tex/latex/xurl/xurl.sty
 Package: xurl 2022/01/09 v 0.10 modify URL breaks
-) (./experiment_analysis.aux)
-\openout1 = `experiment_analysis.aux'.
+) (./two_factor_anova_prepare.aux)
+\openout1 = `two_factor_anova_prepare.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 110.
 LaTeX Font Info:    ... okay on input line 110.
@@ -964,14 +964,12 @@ ed
 put line 115.
 
 LaTeX Font Info:    Font shape `TU/lmtt/bx/n' in size <10> not available
-(Font)              Font shape `TU/lmtt/b/n' tried instead on input line 117.
+(Font)              Font shape `TU/lmtt/b/n' tried instead on input line 120.
 [1
 
 ]
-File: experiment_analysis_files/figure-latex/visalize-1.pdf Graphic file (type 
-pdf)
-<use experiment_analysis_files/figure-latex/visalize-1.pdf>
-[2] [3] [4] [5] [6] [7] (./experiment_analysis.aux)
+Missing character: There is no ≒ (U+2252) in font [lmmono10-italic]:!
+[2] [3] (./two_factor_anova_prepare.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2022/08/05>
@@ -981,12 +979,12 @@ LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
  ) 
 Here is how much of TeX's memory you used:
- 21803 strings out of 476443
- 421455 string characters out of 5793962
+ 21781 strings out of 476443
+ 419952 string characters out of 5793962
  1939627 words of memory out of 5000000
- 43472 multiletter control sequences out of 15000+600000
+ 43452 multiletter control sequences out of 15000+600000
  562257 words of font info for 76 fonts, out of 8000000 for 9000
  269 hyphenation exceptions out of 8191
- 109i,6n,139p,1016b,918s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 109i,6n,139p,1021b,911s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on experiment_analysis.pdf (7 pages).
+Output written on two_factor_anova_prepare.pdf (3 pages).
