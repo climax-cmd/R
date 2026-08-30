@@ -1,0 +1,115 @@
+---
+title: "中心極限定理のシミュレーション（図2.9の再現）"
+author: "統計学演習"
+output:
+  pdf_document:
+    latex_engine: xelatex
+header-includes:
+  - \usepackage{zxjatype}
+  - \setjamainfont{IPAexMincho} # または OSにインストールされている日本語フォント名
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# 必要なパッケージの読み込み
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r berunui_simulation}
+# 母集団のパラメータ設定
+p <- 0.78
+mu <- p                     # 平均
+sigma <- sqrt(p * (1 - p))  # 標準偏差
+
+# シミュレーション回数
+N_sim <- 10000
+
+# サンプルサイズのパターン
+n_values <- c(2, 5, 25, 100, 1000)
+
+# グラフを格納するリスト
+plots <- list()
+
+# 各サンプルサイズについてシミュレーションを実行
+for (i in seq_along(n_values)) {
+  n <- n_values[i]
+  
+  # N_sim回、サイズnの標本を抽出し標本平均を計算
+  sample_means <- replicate(N_sim, mean(rbinom(n, size = 1, prob = p)))
+  
+  # 標本平均を標準化: Z = (X_bar - mu) / (sigma / sqrt(n))
+  z_scores <- (sample_means - mu) / (sigma / sqrt(n))
+  
+  # データフレーム化
+  df <- data.frame(Z = z_scores)
+  
+  # ggplotでヒストグラムと正規分布曲線をプロット
+  p_plot <- ggplot(df, aes(x = Z)) +
+    geom_histogram(aes(y = after_stat(density)), 
+                   bins = min(30, max(10, n)), # nに応じてビン数を調整
+                   fill = "royalblue", color = "black", alpha = 0.8) +
+    stat_function(fun = dnorm, args = list(mean = 0, sd = 1), 
+                  color = "black", linewidth = 0.8) +
+    xlim(-4, 4) +
+    labs(title = paste0("(", letters[i], ") n = ", n),
+         x = "標準化された標本平均の値",
+         y = "確率密度") +
+    theme_minimal() +
+    theme(plot.title = element_text(size = 10))
+  
+  plots[[i]] <- p_plot
+}
+
+# 2x2のグリッドに並べて表示
+grid.arrange(grobs = plots, ncol = 2)
+```
+
+```{r poasonn_simulation}
+# 母集団のパラメータ設定（ポアソン分布）
+lambda <- 0.5                 # ポアソン分布の平均
+mu <- lambda                # 理論上の平均
+sigma <- sqrt(lambda)       # 理論上の標準偏差（ポアソン分布は分散もλになります）
+
+# シミュレーション回数
+N_sim <- 10000            # 100万回で滑らかに
+
+# サンプルサイズのパターン
+n_values <- c(2, 5, 25, 100)
+plots <- list()
+
+for (i in seq_along(n_values)) {
+  n <- n_values[i]
+  
+  # シミュレーションの実行
+  # ※ポアソン分布の「和もポアソン分布になる（再生性）」という性質を利用して
+  # 計算を劇的に高速化しています。
+  sample_means <- rpois(N_sim, lambda = n * lambda) / n
+  
+  # 標本平均を標準化
+  z_scores <- (sample_means - mu) / (sigma / sqrt(n))
+  df <- data.frame(Z = z_scores)
+  
+  # データの本当の刻み幅を計算
+  # ポアソン分布の標本平均は 1/n 刻みになります
+  step_width <- (1 / n) / (sigma / sqrt(n))
+  
+  # ヒストグラムの描画
+  p_plot <- ggplot(df, aes(x = Z)) +
+    geom_histogram(aes(y = after_stat(density)),
+                   binwidth = step_width,    # 計算した刻み幅を適用
+                   center = 0,               
+                   fill = "mediumseagreen", color = "black", linewidth = 0.2, alpha = 0.8) +
+    stat_function(fun = dnorm, args = list(mean = 0, sd = 1), 
+                  color = "black", linewidth = 0.8) +
+    xlim(-4, 4) +
+    labs(title = paste0("(", letters[i], ") n = ", n),
+         x = "標準化された標本平均の値", y = "確率密度") +
+    theme_minimal()
+  
+  plots[[i]] <- p_plot
+}
+
+# 2x2のグリッドに並べて表示
+grid.arrange(grobs = plots, ncol = 2)
+```
