@@ -23,6 +23,8 @@ library(haven)    # データ読み込み用
 library(plm)      # パネルデータ分析用
 library(stargazer) # 回帰結果の表出力用
 library(ggsci)    # グラフの色使い用
+library(modelsummary) # 現代的な回帰表作成用
+library(flextable)    # 表のデザイン・整形用
 ```
 
 ```{r prepare_data}
@@ -201,56 +203,89 @@ print("パネルデータ作成完了")
 print(paste("サンプルサイズ:", nrow(panel_data)))
 ```
 
-```{r visualzie}
-# --- 4. 可視化：年齢ごとの所得推移 ---
+```{r visualize, dev="cairo_pdf"}
+library(scales) # 軸のフォーマット用
+library(ggplot2)
+library(ggsci)
+library(dplyr)
+
+# 1. データの集計
 summary_plot <- panel_data %>%
   group_by(age, first_job_regular_label) %>%
   summarise(mean_income = mean(income_val, na.rm = TRUE),
             n = n(),
-            se = sd(income_val, na.rm = TRUE) / sqrt(n)) %>%
-  filter(age >= 20 & age <= 50)
+            se = sd(income_val, na.rm = TRUE) / sqrt(n),
+            .groups = 'drop') %>%
+  filter(age >= 20 & age <= 50) # 20歳から50歳までに限定
 
-ggplot(summary_plot, aes(x = age, y = mean_income, 
+# 2. グラフの描画
+g <- ggplot(summary_plot, aes(x = age, y = mean_income, 
                          color = first_job_regular_label, 
                          fill = first_job_regular_label)) +
-  geom_line(size = 1) +
+  
+  # 折れ線と信頼区間（リボン）
   geom_ribbon(aes(ymin = mean_income - se, ymax = mean_income + se), 
               alpha = 0.2, color = NA) +
-  labs(title = "年齢と年収の推移：初期キャリアによる違い",
-       subtitle = "初職が正規(黄)か非正規(青)かによる所得格差の推移",
-       x = "年齢", y = "平均年収（万円）",
-       color = "初職の形態", fill = "初職の形態") +
-  theme_minimal() +
-  scale_color_jco() +
-  scale_fill_jco()
+  geom_line(linewidth = 1.2) + # sizeは非推奨になったためlinewidthに変更
+  
+  # タイトルと軸ラベルの設定
+  labs(title = "年齢と年収の推移：初期キャリアによる傷跡",
+       subtitle = "初職が正規（黄）か非正規（青）かによる所得格差の推移",
+       x = "年齢 (歳)", 
+       y = "平均年収 (万円)",
+       caption = "注: 網掛けは95%信頼区間 (標準誤差)",
+       color = "初職の形態", 
+       fill = "初職の形態") +
+  
+  # 軸のスケール調整
+  scale_y_continuous(labels = comma, limits = c(0, 800)) + # 0〜800万円で固定
+  scale_x_continuous(breaks = seq(20, 50, 5)) + # 5歳刻みで表示
+  
+  # 色の設定と凡例ラベルの日本語化
+  scale_color_jco(labels = c("非正規スタート", "正規スタート")) +
+  scale_fill_jco(labels = c("非正規スタート", "正規スタート")) +
+  
+  # デザインテーマの調整
+  # base_familyを指定しない場合、dev="cairo_pdf" がOSの標準フォントを使います
+  theme_minimal(base_size = 12) + 
+  theme(
+    legend.position = "bottom",        # 凡例を下に配置
+    plot.title = element_text(face = "bold", size = 14),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank() # 細かいグリッド線を消す
+  )
+
+# 出力
+print(g)
 ```
 
 ```{r analysis_main}
-# --- 5. メイン分析：傷跡効果の検証（暮らし向き変数版） ---
+# --- 5. メイン分析：傷跡効果の検証（完全版） ---
 
 # モデル1: ベースライン
-# ※ father_manager を削除し、family_rich を追加しました
+# ※ urban_d（都市）と married_d（配偶者）を追加しました
 model_ols <- lm(income_val ~ age + age_sq + reseduy + 
-                  grade_high + 
-                  family_rich +  # <--- ここを変更！
+                  grade_high + family_rich + 
+                  urban_d + married_d +       # <--- ここに追加！
                   first_job_regular_label, 
                 data = panel_data)
 
 # モデル2: 傷跡の持続性（交差項）
-# ※ こちらも同様に変更
+# ※ こちらにも同様に追加
 model_interaction <- lm(income_val ~ age + age_sq + reseduy + 
-                          grade_high + 
-                          family_rich +  # <--- ここを変更！
+                          grade_high + family_rich + 
+                          urban_d + married_d +       # <--- ここに追加！
                           first_job_regular_label * age, 
                         data = panel_data)
 
 # 結果表示
 stargazer(model_ols, model_interaction, type = "text", 
-          title = "初期キャリアの傷跡効果（家庭の豊かさコントロール版）",
+          title = "初期キャリアの傷跡効果（全属性コントロール版）",
           column.labels = c("ベースライン", "交差項モデル"),
           covariate.labels = c("年齢", "年齢2乗", "教育年数", 
-                               "中3成績:上位", 
-                               "15歳時:豊か", # <--- ラベルも変更
+                               "中3成績:上位", "15歳時:豊か", 
+                               "都市部居住", "配偶者あり", # <--- ラベル追加
                                "初職:正規", "初職:正規 × 年齢"),
           keep.stat = c("n", "rsq", "adj.rsq"))
 ```
@@ -291,6 +326,189 @@ stargazer(model_mitigation, model_hope, type = "text",
                                "初職:正規×転職", "初職:正規×資格",
                                "初職:正規×レジリエンス", "初職:正規×OJT"),
           keep.stat = c("n", "rsq", "adj.rsq"))
+```
+
+```{r descriptive_stats_custom}
+# --- 論文スタイルの記述統計表を作成 ---
+
+# 1. 変数リストとカテゴリ（連続/ダミー）の定義
+vars_list <- list(
+  # 連続変数 (MeanとSDを出す)
+  "年収 (万円)"       = panel_data$income_val,
+  "年齢 (歳)"         = panel_data$age,
+  "教育年数 (年)"     = panel_data$reseduy,
+  
+  # ダミー変数 (Mean=割合のみ出す、SDは空欄)
+  "初職：正規雇用"    = as.numeric(as.character(panel_data$first_job_regular)), # factorを数値に戻す
+  "中3成績：上位"     = panel_data$grade_high,
+  "15歳時：豊か"      = panel_data$family_rich,
+  "配偶者あり"        = panel_data$married_d,
+  "大都市居住"        = panel_data$urban_d,
+  "OJT機会あり"       = panel_data$has_ojt_opportunity,
+  "高レジリエンス"    = panel_data$high_resilience,
+  "転職経験あり"      = panel_data$job_change_exp,
+  "資格保有あり"      = panel_data$has_qualification
+)
+
+# 2. 集計処理
+desc_table <- data.frame(Variable = character(), Mean = character(), SD = character(), stringsAsFactors = FALSE)
+
+for (name in names(vars_list)) {
+  vals <- vars_list[[name]]
+  vals <- vals[!is.na(vals)] # NAを除外
+  
+  n <- length(vals)
+  mean_val <- mean(vals)
+  sd_val   <- sd(vals)
+  
+  # ダミー変数かどうかの判定（0と1だけで構成されているか）
+  is_dummy <- all(vals %in% c(0, 1))
+  
+  if (is_dummy) {
+    # ダミー変数の場合: Meanは「%」または「0.xx」で表示、SDは空欄
+    row <- data.frame(
+      Variable = name,
+      Mean = sprintf("%.2f", mean_val), # 割合 (例: 0.65)
+      SD = ""                           # SDは表示しない
+    )
+  } else {
+    # 連続変数の場合: MeanとSDを表示
+    row <- data.frame(
+      Variable = name,
+      Mean = sprintf("%.2f", mean_val),
+      SD = sprintf("%.2f", sd_val)
+    )
+  }
+  desc_table <- rbind(desc_table, row)
+}
+
+# 3. 表の表示
+library(knitr)
+kable(desc_table, caption = "表1：使用した変数の記述統計量", align = c("l", "r", "r"))
+```
+
+```{r analysis_main2}
+# --- 5. メイン分析：傷跡効果の検証（プレゼン形式） ---
+
+# モデル1: ベースライン
+# ※ urban_d（都市）と married_d（配偶者）を追加しました
+model_ols <- lm(income_val ~ age + age_sq + reseduy + 
+                  grade_high + family_rich + 
+                  urban_d + married_d +       # <--- ここに追加！
+                  first_job_regular_label, 
+                data = panel_data)
+
+# モデル2: 傷跡の持続性（交差項）
+# ※ こちらにも同様に追加
+model_interaction <- lm(income_val ~ age + age_sq + reseduy + 
+                          grade_high + family_rich + 
+                          urban_d + married_d +       # <--- ここに追加！
+                          first_job_regular_label * age, 
+                        data = panel_data)
+
+# --- プレゼン用テーブル作成 (modelsummary使用) ---
+
+# 1. 変数名の辞書作成（Rの変数名 = 日本語ラベル）
+# ※ プレゼンで見せたい重要な変数だけを定義します
+coef_map_main <- c(
+  "first_job_regular_labelInitial_Regular" = "初職：正規",
+  "age" = "年齢",
+  "first_job_regular_labelInitial_Regular:age" = "初職：正規 × 年齢",
+  "family_rich" = "15歳時：豊か",
+  "(Intercept)" = "切片"
+)
+
+# （前半の modelsummary(...) まではそのまま）
+# output = "flextable" のまま
+
+modelsummary(
+  list("ベースライン" = model_ols, "交差項モデル" = model_interaction),
+  coef_map = coef_map_main,
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  gof_map = c("nobs", "r.squared", "adj.r.squared"),
+  output = "flextable",
+  title = "初期キャリアの傷跡効果（主要係数のみ）"
+) %>%
+  theme_vanilla() %>%
+  
+  # --- 【変更点】ここから ---
+  # fit_to_width や autofit は削除し、手動で幅を指定（単位はインチ）
+  width(j = 1, width = 2.0) %>%    # 1列目（変数名）: 2インチ
+  width(j = 2:3, width = 1.6) %>%  # 2-3列目（モデル）: 1.6インチ
+  # ------------------------
+  
+  color(part = "header", color = "white") %>%
+  bg(part = "header", bg = "#0073C2") %>%
+  bold(j = 1) %>%
+  fontsize(size = 9) %>%
+  align(align = "center", part = "all") %>% # 全体を中央揃え
+  align(j = 1, align = "left", part = "all") # 1列目だけ左揃え
+```
+
+```{r analysis_factors_fixed2}
+# --- 6. 発展分析：緩和要因と希望の検証（プレゼン形式） ---
+
+# モデル構築（変更なし）
+model_mitigation <- lm(income_val ~ age + age_sq + reseduy + grade_high + 
+                         family_rich + 
+                         first_job_regular_label * job_change_exp + 
+                         first_job_regular_label * has_qualification +
+                         urban_d + married_d,
+                       data = panel_data)
+
+model_hope <- lm(income_val ~ age + age_sq + reseduy + grade_high + 
+                   family_rich + 
+                   first_job_regular_label * high_resilience +
+                   first_job_regular_label * has_ojt_opportunity +
+                   urban_d + married_d,
+                 data = panel_data)
+
+# --- プレゼン用テーブル作成 ---
+
+# 変数名マッピング
+coef_map_factors <- c(
+  "first_job_regular_labelInitial_Regular" = "初職：正規",
+  "job_change_exp" = "転職経験あり",
+  "has_qualification" = "資格あり",
+  "high_resilience" = "高レジリエンス",
+  "has_ojt_opportunity" = "OJT機会あり",
+  
+  # 相互作用項（Rの出力に合わせて指定）
+  "first_job_regular_labelInitial_Regular:job_change_exp" = "正規 × 転職経験",
+  "first_job_regular_labelInitial_Regular:has_qualification" = "正規 × 資格",
+  "first_job_regular_labelInitial_Regular:high_resilience" = "正規 × レジリエンス",
+  "first_job_regular_labelInitial_Regular:has_ojt_opportunity" = "正規 × OJT"
+)
+
+# 1. まず flextable のベースを作成
+ft <- modelsummary(
+  list("緩和モデル(転職/資格)" = model_mitigation, "希望モデル(心理/環境)" = model_hope),
+  coef_map = coef_map_factors, 
+  stars = c('*' = .1, '**' = .05, '***' = .01),
+  gof_map = c("nobs", "adj.r.squared"),
+  output = "flextable",
+  title = "傷跡効果を緩和・変容させる要因"
+)
+
+# 2. 「×」が含まれる行番号を特定（列名に依存しない方法）
+# flextableの内部データ(body$dataset)の1列目を取り出して判定
+rows_to_highlight <- str_detect(ft$body$dataset[[1]], "×")
+
+# （前半の ft <- modelsummary(...) まではそのまま）
+# （rows_to_highlight の作成部分もそのまま）
+
+# 3. デザインを適用
+ft %>%
+  theme_booktabs() %>%
+  # 【変更】autofit() を削除し、ページ幅(100%)に強制的に収める
+  fit_to_width(max_width = 1) %>% 
+  
+  # 【変更】情報量が多い表なので、フォントサイズを小さめにする（8〜9推奨）
+  fontsize(size = 8) %>%
+  
+  # 特定行のハイライト（既存コード）
+  bg(i = rows_to_highlight, bg = "#FFF8DC") %>% 
+  bold(j = 1)
 ```
 
 #考察

@@ -86,3 +86,62 @@ if(f_detectable > 0.4) {
 
 cat("検出可能な秒数差 (概算): 約", round(delta_detectable, 2), "秒 以上の差が必要\n")
 ```
+
+```{r descriptive_stats_custom}
+# --- 論文スタイルの記述統計表を作成 ---
+
+# 1. 変数リストとカテゴリ（連続/ダミー）の定義
+vars_list <- list(
+  # 連続変数 (MeanとSDを出す)
+  "年収 (万円)"       = panel_data$income_val,
+  "年齢 (歳)"         = panel_data$age,
+  "教育年数 (年)"     = panel_data$reseduy,
+  
+  # ダミー変数 (Mean=割合のみ出す、SDは空欄)
+  "初職：正規雇用"    = as.numeric(as.character(panel_data$first_job_regular)), # factorを数値に戻す
+  "中3成績：上位"     = panel_data$grade_high,
+  "15歳時：豊か"      = panel_data$family_rich,
+  "配偶者あり"        = panel_data$married_d,
+  "大都市居住"        = panel_data$urban_d,
+  "OJT機会あり"       = panel_data$has_ojt_opportunity,
+  "高レジリエンス"    = panel_data$high_resilience,
+  "転職経験あり"      = panel_data$job_change_exp,
+  "資格保有あり"      = panel_data$has_qualification
+)
+
+# 2. 集計処理
+desc_table <- data.frame(Variable = character(), Mean = character(), SD = character(), stringsAsFactors = FALSE)
+
+for (name in names(vars_list)) {
+  vals <- vars_list[[name]]
+  vals <- vals[!is.na(vals)] # NAを除外
+  
+  n <- length(vals)
+  mean_val <- mean(vals)
+  sd_val   <- sd(vals)
+  
+  # ダミー変数かどうかの判定（0と1だけで構成されているか）
+  is_dummy <- all(vals %in% c(0, 1))
+  
+  if (is_dummy) {
+    # ダミー変数の場合: Meanは「%」または「0.xx」で表示、SDは空欄
+    row <- data.frame(
+      Variable = name,
+      Mean = sprintf("%.2f", mean_val), # 割合 (例: 0.65)
+      SD = ""                           # SDは表示しない
+    )
+  } else {
+    # 連続変数の場合: MeanとSDを表示
+    row <- data.frame(
+      Variable = name,
+      Mean = sprintf("%.2f", mean_val),
+      SD = sprintf("%.2f", sd_val)
+    )
+  }
+  desc_table <- rbind(desc_table, row)
+}
+
+# 3. 表の表示
+library(knitr)
+kable(desc_table, caption = "表1：使用した変数の記述統計量", align = c("l", "r", "r"))
+```

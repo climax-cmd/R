@@ -75,47 +75,33 @@ anova_result <- anova(model)
 print(anova_result)
 ```
 
-```{r calculate_detection_power}
-# --- 追加：事後検出力と効果量の計算 ---
+```{r calculate_power}
+# --- 追加：事後検出力の計算（シンプル版） ---
 
 # 1. 誤差（Residuals）の情報を取得
 # anova_resultの最後の行がResiduals
 df_resid <- anova_result["Residuals", "Df"]
-ss_resid <- anova_result["Residuals", "Sum Sq"]
-# 誤差分散 (Mean Square Error) は手動計算でも取得可能
-ms_resid <- ss_resid / df_resid 
 
 # 2. 効果（Length, Width, Interaction）の行だけを抽出
 effects <- anova_result[rownames(anova_result) != "Residuals", ]
 
-# 3. 各指標の計算
-# (1) 部分イータ二乗 (Partial Eta Squared)
-# 式: SS_effect / (SS_effect + SS_error)
-effects$Eta_Sq_Partial <- effects$"Sum Sq" / (effects$"Sum Sq" + ss_resid)
-
-# (2) 効果量 f (Cohen's f)
-# 式: sqrt( eta^2 / (1 - eta^2) )
-effects$Effect_Size_f <- sqrt(effects$Eta_Sq_Partial / (1 - effects$Eta_Sq_Partial))
-
-# (3) 事後検出力 (Observed Power)
-# 非心度パラメータ (lambda) = F値 * 自由度 (または SS_effect / MS_error)
+# 3. 事後検出力 (Observed Power) の計算
+# ※非心度パラメータ (lambda) = F値 * 自由度
 ncp <- effects$"F value" * effects$Df
+
 # 棄却限界値 (クリティカルF)
 f_crit <- qf(1 - 0.05, effects$Df, df_resid)
+
 # 検出力 (1 - beta)
 effects$Power <- 1 - pf(f_crit, effects$Df, df_resid, ncp)
 
-# 4. 表の整形と表示
-# 不要な列を整理し、小数点以下を丸める
+# 4. 表の整形（自由度と検出力のみを表示）
 output_table <- data.frame(
-  Factor = rownames(effects),
-  Df = effects$Df,
-  F_Value = round(effects$"F value", 2),
-  Partial_Eta_Sq = round(effects$Eta_Sq_Partial, 3),
-  Effect_Size_f = round(effects$Effect_Size_f, 3),
-  Power = round(effects$Power, 3)
+  Factor = rownames(effects),       # 要因名
+  Df = effects$Df,                  # 自由度
+  Power = round(effects$Power, 3)   # 検出力
 )
 
 # 結果の表示
-knitr::kable(output_table, caption = "効果量と事後検出力の計算結果")
+knitr::kable(output_table, caption = "事後検出力の計算結果")
 ```

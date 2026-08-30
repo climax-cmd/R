@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2025.12.8)  20 JAN 2026 14:45
+This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023/Debian) (preloaded format=xelatex 2026.1.10)  22 JAN 2026 16:44
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1029,18 +1029,10 @@ File: two_factor_anova_conduct_files/figure-latex/visualize-2.pdf Graphic file
 (type pdf)
 <use two_factor_anova_conduct_files/figure-latex/visualize-2.pdf>
 [3]
-Underfull \vbox (badness 3612) detected at line 312
+Underfull \vbox (badness 3492) detected at line 304
  []
 
-[4]
-Underfull \vbox (badness 10000) detected at line 312
- []
-
-
-Underfull \vbox (badness 10000) detected at line 312
- []
-
-[5] [6] (./two_factor_anova_conduct.aux)
+[4] [5] (./two_factor_anova_conduct.aux)
  ***********
 LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2022/08/05>
@@ -1058,4 +1050,4 @@ Here is how much of TeX's memory you used:
  269 hyphenation exceptions out of 8191
  109i,6n,139p,1021b,522s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on two_factor_anova_conduct.pdf (6 pages).
+Output written on two_factor_anova_conduct.pdf (5 pages).
